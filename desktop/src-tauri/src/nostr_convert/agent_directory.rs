@@ -379,7 +379,7 @@ mod tests {
         let profile = verified_profile(&owner, &agent);
 
         let incomplete = config(&owner, &agent, "mystery", Vec::new());
-        let agents = project_relay_agents(&[incomplete], &[profile.clone()], &[], &[]);
+        let agents = project_relay_agents(&[incomplete], std::slice::from_ref(&profile), &[], &[]);
         assert_eq!(agents[0].directory_state, DirectoryState::Incomplete);
 
         let foreign = config(&foreign_owner, &agent, "anyone", Vec::new());

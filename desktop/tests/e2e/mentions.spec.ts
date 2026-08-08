@@ -1683,7 +1683,7 @@ test("profile-only agent author hides actions without agent access", async ({
     .getByTestId("message-row")
     .filter({ hasText: "Mira status update." })
     .first();
-  await messageRow.locator("button").first().hover();
+  await messageRow.getByTestId("message-author").hover();
 
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',
@@ -2111,7 +2111,7 @@ test("agent profile popover shows its owner", async ({ page }) => {
     .getByTestId("message-row")
     .filter({ hasText: "Bumble checking in." })
     .first();
-  await bumbleMessage.locator("button").first().hover();
+  await bumbleMessage.getByTestId("message-author").hover();
 
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',
@@ -2151,7 +2151,7 @@ test("agent profile popover labels an agent owned by the viewer as you", async (
     .getByTestId("message-row")
     .filter({ hasText: "Bumble checking in." })
     .first();
-  await bumbleMessage.locator("button").first().hover();
+  await bumbleMessage.getByTestId("message-author").hover();
 
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',
@@ -2191,7 +2191,7 @@ test("agent profile popover falls back to the owner's pubkey", async ({
     .getByTestId("message-row")
     .filter({ hasText: "Bumble checking in." })
     .first();
-  await bumbleMessage.locator("button").first().hover();
+  await bumbleMessage.getByTestId("message-author").hover();
 
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',
@@ -2219,7 +2219,7 @@ test("human profile popover does not show an owner", async ({ page }) => {
     .getByTestId("message-row")
     .filter({ hasText: "Bob checking in." })
     .first();
-  await bobMessage.locator("button").first().hover();
+  await bobMessage.getByTestId("message-author").hover();
 
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',
@@ -2250,7 +2250,7 @@ test("owned bot profile exposes message and huddle actions", async ({
     .getByTestId("message-row")
     .filter({ hasText: "Indexing the channel catalog now." })
     .first();
-  await charlieMessage.locator("button").first().hover();
+  await charlieMessage.getByTestId("message-author").hover();
 
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',
@@ -2336,7 +2336,7 @@ test("profile popover wave sends a direct message for a human profile", async ({
     .getByTestId("message-row")
     .filter({ hasText: "Bob says hello." })
     .first();
-  await bobMessage.locator("button").first().hover();
+  await bobMessage.getByTestId("message-author").hover();
 
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',
@@ -2430,7 +2430,7 @@ test("delayed inaccessible agent profile keeps all actions hidden", async ({
     .getByTestId("message-row")
     .filter({ hasText: "Orbit checking in." })
     .first();
-  await orbitMessage.locator("button").first().hover();
+  await orbitMessage.getByTestId("message-author").hover();
 
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',
