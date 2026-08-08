@@ -8,6 +8,7 @@ import {
   useChannelsQuery,
 } from "@/features/channels/hooks";
 import { attachManagedAgentToChannel } from "@/features/agents/channelAgents";
+import { RelayDirectoryErrorNotice } from "@/features/agents/ui/RelayDirectoryErrorNotice";
 import {
   coalesceAgentAutocompleteCandidates,
   getMentionableAgentPubkeys,
@@ -340,7 +341,7 @@ export function MembersSidebar({
         displayName: agent.name,
         avatarUrl: null,
         nip05Handle: null,
-        ownerPubkey: null,
+        ownerPubkey: agent.ownerPubkey,
         isAgent: true,
       });
     }
@@ -746,6 +747,13 @@ export function MembersSidebar({
               >
                 {PRIVATE_CHANNEL_ADD_DENIED_MESSAGE}
               </p>
+            ) : null}
+            {relayAgentsQuery.error instanceof Error ? (
+              <RelayDirectoryErrorNotice
+                message={relayAgentsQuery.error.message}
+                onRetry={() => void relayAgentsQuery.refetch()}
+                testId="members-sidebar-directory-error"
+              />
             ) : null}
           </DialogHeader>
 

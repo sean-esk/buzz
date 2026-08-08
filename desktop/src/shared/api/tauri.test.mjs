@@ -77,6 +77,29 @@ test("fromRawRelayAgent maps public directory ownership, policy, and state", () 
   assert.equal(agent.directoryState, "incomplete");
 });
 
+test("fromRawRelayAgent fails closed for sparse, null, and omitted directory fields", () => {
+  for (const raw of [
+    {},
+    { owner_pubkey: null, respond_to: null, respond_to_allowlist: null },
+    { directory_state: undefined },
+  ]) {
+    const agent = fromRawRelayAgent({
+      pubkey: "a".repeat(64),
+      name: "Neo",
+      agent_type: "agent",
+      channels: [],
+      channel_ids: [],
+      capabilities: [],
+      status: "offline",
+      ...raw,
+    });
+    assert.equal(agent.ownerPubkey, null);
+    assert.equal(agent.respondTo, null);
+    assert.deepEqual(agent.respondToAllowlist, []);
+    assert.equal(agent.directoryState, "incomplete");
+  }
+});
+
 function resetGate(startMs = 0) {
   pendingTimers.clear();
   nextTimerId = 1;

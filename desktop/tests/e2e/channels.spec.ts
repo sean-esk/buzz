@@ -3449,6 +3449,41 @@ test("members sidebar can invite relay-authorized agents", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("new-DM picker excludes relay-only agents while retaining local agents and people", async ({
+  page,
+}) => {
+  await installMockBridge(page, {
+    managedAgents: [
+      {
+        pubkey: TEST_IDENTITIES.charlie.pubkey,
+        name: "local fizz",
+        status: "stopped",
+      },
+    ],
+    relayAgents: [
+      {
+        pubkey: DM_RELAY_AGENT_PUBKEY,
+        name: "remote quinn",
+        respondTo: "anyone",
+        directoryState: "resolved",
+        channelNames: ["general"],
+      },
+    ],
+  });
+  await page.goto("/");
+  await openNewMessagePage(page);
+
+  await expect(
+    page.getByTestId(`new-dm-result-${TEST_IDENTITIES.charlie.pubkey}`),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId(`new-dm-result-${TEST_IDENTITIES.bob.pubkey}`),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId(`new-dm-result-${DM_RELAY_AGENT_PUBKEY}`),
+  ).toHaveCount(0);
+});
+
 test("members sidebar hides relay agents that are not authorized", async ({
   page,
 }) => {

@@ -108,7 +108,7 @@ export function getMentionableAgentPubkeys({
   eligibilityScope,
   managedAgentPubkeys,
   relayAgents,
-  relayDirectorySettled = true,
+  relayDirectorySettled = false,
   sharedChannelIds,
 }: {
   currentPubkey?: string | null;
@@ -160,7 +160,7 @@ export function shouldHideAgentFromMentions({
   pubkey,
   mentionableAgentPubkeys,
   directoryAgentPubkeys,
-  relayDirectorySettled = true,
+  relayDirectorySettled = false,
 }: {
   isAgent: boolean;
   isMember: boolean;

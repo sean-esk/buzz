@@ -416,6 +416,27 @@ test("getMentionableAgentPubkeys: direct messages never inherit channel policy",
   assert.deepEqual(result, new Set([PUB_A]));
 });
 
+test("omitted relay-directory settlement fails closed", () => {
+  const relayAgent = {
+    pubkey: PUB_B,
+    ownerPubkey: OWNER_PUBKEY,
+    respondTo: "anyone",
+    respondToAllowlist: [],
+    channelIds: ["general"],
+    directoryState: "resolved",
+  };
+  assert.deepEqual(
+    getMentionableAgentPubkeys({
+      currentPubkey: CURRENT_PUBKEY,
+      eligibilityScope: { type: "community" },
+      managedAgentPubkeys: [],
+      relayAgents: [relayAgent],
+      sharedChannelIds: new Set(["general"]),
+    }),
+    new Set(),
+  );
+});
+
 test("coalesceAgentAutocompleteCandidates: keeps agents with the same persona id distinct", () => {
   const first = makeAgent({ pubkey: PUB_A, personaId: "pinky" });
   const second = makeAgent({

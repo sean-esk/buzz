@@ -1074,6 +1074,37 @@ test("relay-only anyone agents are visible when a channel is shared", async ({
   await expect(autocomplete(page).getByText("quinn")).toBeVisible();
 });
 
+for (const directoryState of ["incomplete", "untrusted"] as const) {
+  test(`relay agents with ${directoryState} directory state stay hidden from mentions`, async ({
+    page,
+  }) => {
+    await installMockBridge(page, {
+      relayAgents: [
+        {
+          pubkey: ALLOWLIST_RELAY_AGENT_PUBKEY,
+          name: "quinn",
+          respondTo: "anyone",
+          directoryState,
+          channelNames: ["general"],
+        },
+      ],
+    });
+    await page.goto("/");
+    await page.getByTestId("channel-general").click();
+    await page.getByTestId("message-input").fill("@quinn");
+    await expect(autocomplete(page)).toHaveCount(0);
+  });
+}
+
+test("settled directory absence permits an in-channel bot mention", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("channel-general").click();
+  await page.getByTestId("message-input").fill("@alice");
+  await expect(autocomplete(page).getByText("alice")).toBeVisible();
+});
+
 test("relay-only excluded agents stay hidden from channel mentions", async ({
   page,
 }) => {

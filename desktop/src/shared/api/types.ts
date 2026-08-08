@@ -300,7 +300,9 @@ export type ManagedAgentRuntimeLifecycle =
 
 export type ManagedAgentRuntimeStatus = {
   pubkey: string;
+  /** Exact submitted descriptor, present only on startup reconcile results. */
   requestedRelayUrl?: string;
+  /** Canonical, backend-owned pair identity component. Do not normalize in TS. */
   relayUrl: string;
   localSetup: boolean;
   lifecycle: ManagedAgentRuntimeLifecycle;
@@ -319,11 +321,22 @@ export type ManagedAgent = {
   pubkey: string;
   name: string;
   personaId: string | null;
+  /**
+   * The record's harness/runtime id (e.g. "goose", "my-custom-harness").
+   * `null` means the agent inherits its harness from the linked persona.
+   * Used to count agents referencing a harness definition (delete confirm).
+   */
   runtime: string | null;
   teamId?: string | null;
   relayUrl: string;
   acpCommand: string;
+  /** Resolved/effective harness command (persona-wins, override-honored). */
   agentCommand: string;
+  /**
+   * Explicit per-instance harness pin. `null` means the agent inherits its
+   * harness from the linked persona's runtime. Lets the Edit dialog show
+   * "Inherit from persona" vs a concrete pin.
+   */
   agentCommandOverride: string | null;
   agentArgs: string[];
   mcpCommand: string;

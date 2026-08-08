@@ -992,6 +992,9 @@ export function useMentions(
     fetchMoreSuggestions,
     hasMoreSuggestions: Boolean(userSearchQuery.hasNextPage),
     isFetchingMoreSuggestions: userSearchQuery.isFetchingNextPage,
+    relayDirectoryError:
+      relayAgentsQuery.error instanceof Error ? relayAgentsQuery.error : null,
+    retryRelayDirectory: relayAgentsQuery.refetch,
     updateMentionQuery,
   };
 }

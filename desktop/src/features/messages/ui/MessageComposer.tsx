@@ -24,6 +24,7 @@ import {
   useBackgroundMediaUpload,
 } from "@/features/messages/lib/backgroundMediaUploadStore";
 import { useMentions } from "@/features/messages/lib/useMentions";
+import { RelayDirectoryErrorNotice } from "@/features/agents/ui/RelayDirectoryErrorNotice";
 import { getPersistentAgentAudienceScope } from "@/features/messages/lib/persistentAgentAudience";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import {
@@ -937,6 +938,13 @@ function MessageComposerImpl({
               selectedIndex={mentions.mentionSelectedIndex}
               suggestions={mentions.isMentionOpen ? mentions.suggestions : []}
             />
+            {mentions.relayDirectoryError ? (
+              <RelayDirectoryErrorNotice
+                message={mentions.relayDirectoryError.message}
+                onRetry={() => void mentions.retryRelayDirectory()}
+                testId="mention-directory-error"
+              />
+            ) : null}
             {media.uploadState.status === "error" ? (
               <div className="mb-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
                 Upload failed: {media.uploadState.message}
