@@ -24,6 +24,7 @@ import {
   useBackgroundMediaUpload,
 } from "@/features/messages/lib/backgroundMediaUploadStore";
 import { useMentions } from "@/features/messages/lib/useMentions";
+import { RelayDirectoryErrorNotice } from "@/features/agents/ui/RelayDirectoryErrorNotice";
 import { getPersistentAgentAudienceScope } from "@/features/messages/lib/persistentAgentAudience";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import {
@@ -837,14 +838,12 @@ function MessageComposerImpl({
     },
     [media.removeAttachment],
   );
-
   const { handleAttachmentEditSave, handleAttachmentRevert } =
     useAttachmentEditing({
       revertAttachment: media.revertAttachment,
       setSpoileredAttachmentUrls,
       uploadEditedAttachment: media.uploadEditedAttachment,
     });
-
   const handleToggleAttachmentSpoiler = React.useCallback((url: string) => {
     setSpoileredAttachmentUrls((current) => {
       const next = new Set(current);
@@ -856,7 +855,6 @@ function MessageComposerImpl({
       return next;
     });
   }, []);
-
   return (
     <>
       <footer
@@ -937,6 +935,11 @@ function MessageComposerImpl({
               selectedIndex={mentions.mentionSelectedIndex}
               suggestions={mentions.isMentionOpen ? mentions.suggestions : []}
             />
+            <RelayDirectoryErrorNotice
+              error={mentions.relayDirectoryError}
+              onRetry={mentions.retryRelayDirectory}
+              testId="mention-directory-error"
+            />
             {media.uploadState.status === "error" ? (
               <div className="mb-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
                 Upload failed: {media.uploadState.message}
@@ -949,7 +952,6 @@ function MessageComposerImpl({
                 </button>
               </div>
             ) : null}
-
             {composerLinkPreviews}
             {(media.pendingImeta.length > 0 ||
               media.queuedAttachments.length > 0 ||
@@ -1006,9 +1008,7 @@ function MessageComposerImpl({
           </form>
         </div>
       </footer>
-
       <NonMemberMentionDialog {...mentionSendFlow.nonMemberPromptProps} />
-
       {linkEditor.card}
       {linkEditor.dialog}
     </>

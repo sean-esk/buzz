@@ -140,7 +140,7 @@ function useAgentCandidates() {
   const relayAgentsQuery = useRelayAgentsQuery();
   const channelsQuery = useChannelsQuery();
 
-  return React.useMemo(() => {
+  const candidates = React.useMemo(() => {
     const managed = managedAgentsQuery.data ?? [];
     const relayAgents = relayAgentsQuery.data ?? [];
     const managedByPubkey = new Map(
@@ -148,9 +148,11 @@ function useAgentCandidates() {
     );
     const mentionable = getMentionableAgentPubkeys({
       currentPubkey: identityQuery.data?.pubkey,
-      eligibilityScope: { type: "community" },
+      eligibilityScope: { type: "direct-message" },
       managedAgentPubkeys: managedByPubkey.keys(),
       relayAgents,
+      relayDirectorySettled:
+        relayAgentsQuery.data !== undefined && relayAgentsQuery.error === null,
       sharedChannelIds: getSharedChannelIds(channelsQuery.data),
     });
 
@@ -181,7 +183,15 @@ function useAgentCandidates() {
     identityQuery.data?.pubkey,
     managedAgentsQuery.data,
     relayAgentsQuery.data,
+    relayAgentsQuery.error,
   ]);
+
+  return {
+    candidates,
+    directoryError:
+      relayAgentsQuery.error instanceof Error ? relayAgentsQuery.error : null,
+    retryDirectory: relayAgentsQuery.refetch,
+  };
 }
 
 /** Live message feed for the conversation's backing DM channel, reduced to
@@ -294,7 +304,7 @@ export function ProjectsAgentPromptPage({
 
   const identityQuery = useIdentityQuery();
   const profileQuery = useProfileQuery();
-  const candidates = useAgentCandidates();
+  const { candidates, directoryError, retryDirectory } = useAgentCandidates();
   const channelsQuery = useChannelsQuery();
   const openDmMutation = useOpenDmMutation();
   const startAgentMutation = useStartManagedAgentMutation();
@@ -554,6 +564,21 @@ export function ProjectsAgentPromptPage({
           </Button>
         </div>
       </div>
+      {directoryError ? (
+        <p
+          className="pt-2 text-sm text-destructive"
+          data-testid="projects-agent-directory-error"
+        >
+          Agent directory unavailable: {directoryError.message}{" "}
+          <button
+            className="underline"
+            onClick={() => void retryDirectory()}
+            type="button"
+          >
+            Retry
+          </button>
+        </p>
+      ) : null}
       {linkEditor.card}
       {linkEditor.dialog}
     </>

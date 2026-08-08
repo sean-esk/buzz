@@ -111,11 +111,13 @@ export function useNewMessageRecipients({
       : null;
     const eligibleAgentPubkeys = getMentionableAgentPubkeys({
       currentPubkey,
-      eligibilityScope: { type: "community" },
+      eligibilityScope: { type: "direct-message" },
       managedAgentPubkeys: (managedAgentsQuery.data ?? []).map(
         (agent) => agent.pubkey,
       ),
       relayAgents: relayAgentsQuery.data,
+      relayDirectorySettled:
+        relayAgentsQuery.data !== undefined && relayAgentsQuery.error === null,
       sharedChannelIds: getSharedChannelIds(channelsQuery.data),
     });
 
@@ -178,7 +180,7 @@ export function useNewMessageRecipients({
           displayName: agent.name,
           avatarUrl: null,
           nip05Handle: null,
-          ownerPubkey: null,
+          ownerPubkey: agent.ownerPubkey,
           isAgent: true,
         },
         { includeSelected: deferredSearchQuery.length > 0 },
@@ -223,6 +225,7 @@ export function useNewMessageRecipients({
     isArchivedDiscovery,
     managedAgentsQuery.data,
     relayAgentsQuery.data,
+    relayAgentsQuery.error,
     selectedPubkeys,
     userSearchResults,
   ]);
@@ -321,6 +324,9 @@ export function useNewMessageRecipients({
     reset,
     searchError:
       userSearchQuery.error instanceof Error ? userSearchQuery.error : null,
+    relayDirectoryError:
+      relayAgentsQuery.error instanceof Error ? relayAgentsQuery.error : null,
+    retryRelayDirectory: relayAgentsQuery.refetch,
     searchQuery,
     searchResults,
     selectUser,

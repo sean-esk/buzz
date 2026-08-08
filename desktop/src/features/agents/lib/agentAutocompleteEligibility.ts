@@ -9,8 +9,26 @@ export function getSharedChannelIds(channels: readonly Channel[] | undefined) {
   );
 }
 
+export function relayAgentDirectoryByPubkey(
+  relayAgents: readonly RelayAgent[] | undefined,
+) {
+  return new Map(
+    (relayAgents ?? []).map((agent) => [
+      normalizePubkey(agent.pubkey),
+      { name: agent.name, ownerPubkey: agent.ownerPubkey },
+    ]),
+  );
+}
+
 export function relayAgentIsSharedWithUser(
-  agent: Pick<RelayAgent, "channelIds" | "respondTo" | "respondToAllowlist">,
+  agent: Pick<
+    RelayAgent,
+    | "channelIds"
+    | "ownerPubkey"
+    | "respondTo"
+    | "respondToAllowlist"
+    | "directoryState"
+  >,
   sharedChannelIds: ReadonlySet<string>,
   currentPubkey?: string | null,
 ) {
@@ -18,32 +36,71 @@ export function relayAgentIsSharedWithUser(
     ? normalizePubkey(currentPubkey)
     : null;
 
-  if (agent.respondTo === "allowlist" && normalizedCurrentPubkey) {
-    return agent.respondToAllowlist
-      .map((pubkey) => normalizePubkey(pubkey))
-      .includes(normalizedCurrentPubkey);
+  if (
+    agent.directoryState !== undefined &&
+    agent.directoryState !== "resolved"
+  ) {
+    return false;
   }
-
-  return (
-    agent.respondTo === "anyone" &&
-    agent.channelIds.some((channelId) => sharedChannelIds.has(channelId))
-  );
+  if (agent.respondTo === "anyone") {
+    return (
+      agent.channelIds.some((channelId) => sharedChannelIds.has(channelId)) &&
+      relayAgentPolicyAllows(agent, normalizedCurrentPubkey)
+    );
+  }
+  return relayAgentPolicyAllows(agent, normalizedCurrentPubkey);
 }
 
 export function relayAgentCanRespondInChannel(
-  agent: Pick<RelayAgent, "channelIds" | "respondTo" | "respondToAllowlist">,
+  agent: Pick<
+    RelayAgent,
+    | "channelIds"
+    | "ownerPubkey"
+    | "respondTo"
+    | "respondToAllowlist"
+    | "directoryState"
+  >,
   channelId: string,
   currentPubkey?: string | null,
 ) {
   return (
+    (agent.directoryState === undefined ||
+      agent.directoryState === "resolved") &&
     agent.channelIds.includes(channelId) &&
-    relayAgentIsSharedWithUser(agent, new Set([channelId]), currentPubkey)
+    relayAgentPolicyAllows(
+      agent,
+      currentPubkey ? normalizePubkey(currentPubkey) : null,
+    )
   );
+}
+
+function relayAgentPolicyAllows(
+  agent: Pick<RelayAgent, "ownerPubkey" | "respondTo" | "respondToAllowlist">,
+  normalizedCurrentPubkey: string | null,
+) {
+  if (!agent.respondTo) return false;
+  if (agent.respondTo === "anyone") return true;
+  if (agent.respondTo === "nobody" || !normalizedCurrentPubkey) return false;
+  const isOwner =
+    typeof agent.ownerPubkey === "string" &&
+    normalizePubkey(agent.ownerPubkey) === normalizedCurrentPubkey;
+  switch (agent.respondTo) {
+    case "allowlist":
+      return (
+        isOwner ||
+        agent.respondToAllowlist.some(
+          (pubkey) => normalizePubkey(pubkey) === normalizedCurrentPubkey,
+        )
+      );
+    case "owner-only":
+      return isOwner;
+  }
 }
 
 export type AgentEligibilityScope =
   | { type: "community" }
   | { type: "channel"; channelId: string }
+  | { type: "direct-message" }
   | { type: "managed-only" };
 
 export function getMentionableAgentPubkeys({
@@ -51,12 +108,15 @@ export function getMentionableAgentPubkeys({
   eligibilityScope,
   managedAgentPubkeys,
   relayAgents,
+  relayDirectorySettled = false,
   sharedChannelIds,
 }: {
   currentPubkey?: string | null;
   eligibilityScope: AgentEligibilityScope;
   managedAgentPubkeys: Iterable<string>;
   relayAgents: readonly RelayAgent[] | undefined;
+  /** Successful directory response; loading and errors must fail closed. */
+  relayDirectorySettled: boolean;
   sharedChannelIds: ReadonlySet<string>;
 }) {
   const pubkeys = new Set(
@@ -65,7 +125,9 @@ export function getMentionableAgentPubkeys({
 
   for (const agent of relayAgents ?? []) {
     const isAllowed =
-      eligibilityScope.type === "managed-only"
+      !relayDirectorySettled ||
+      eligibilityScope.type === "managed-only" ||
+      eligibilityScope.type === "direct-message"
         ? false
         : eligibilityScope.type === "community"
           ? relayAgentIsSharedWithUser(agent, sharedChannelIds, currentPubkey)
@@ -98,12 +160,14 @@ export function shouldHideAgentFromMentions({
   pubkey,
   mentionableAgentPubkeys,
   directoryAgentPubkeys,
+  relayDirectorySettled = false,
 }: {
   isAgent: boolean;
   isMember: boolean;
   pubkey: string;
   mentionableAgentPubkeys: ReadonlySet<string>;
   directoryAgentPubkeys: ReadonlySet<string>;
+  relayDirectorySettled: boolean;
 }) {
   if (!isAgent) return false;
   const normalized = normalizePubkey(pubkey);
@@ -111,18 +175,10 @@ export function shouldHideAgentFromMentions({
   if (mentionableAgentPubkeys.has(normalized)) return false;
   // Non-member, non-invocable => hide (preserves prior behavior).
   if (!isMember) return true;
-  // Member (Option B): hide only when we have an explicit not-invocable
-  // signal — a relay directory (kind:10100) entry that excludes us.
-  // Unknown invocability (not in directory) => show.
-  //
-  // NOTE: this assumes `directoryAgentPubkeys` and `mentionableAgentPubkeys`
-  // share the same source query (`relayAgentsQuery.data`), so directory
-  // presence without membership in `mentionableAgentPubkeys` is a real
-  // explicit-exclusion signal. If a future change sources the directory set
-  // from a different query, an agent that's directory-present but whose
-  // mentionability is still loading could be hidden prematurely — keep the
-  // two sets derived from the same query.
-  return directoryAgentPubkeys.has(normalized);
+  // Membership fallback is only safe after a successful directory settle.
+  // A present directory entry that did not make the allowed set is an
+  // explicit denial, incomplete record, or failed owner verification.
+  return !relayDirectorySettled || directoryAgentPubkeys.has(normalized);
 }
 
 export function isAgentMentionChannelType(type?: string | null) {

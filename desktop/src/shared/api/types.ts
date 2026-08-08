@@ -1,7 +1,6 @@
 export type ChannelType = "stream" | "forum" | "dm";
 export type ChannelVisibility = "open" | "private";
 export type ChannelRole = "owner" | "admin" | "member" | "guest" | "bot";
-
 export type Channel = {
   id: string;
   name: string;
@@ -20,7 +19,6 @@ export type Channel = {
   ttlSeconds: number | null;
   ttlDeadline: string | null;
 };
-
 export type ChannelDetail = Channel & {
   createdBy: string;
   createdAt: string;
@@ -33,7 +31,6 @@ export type ChannelDetail = Channel & {
   maxMembers: number | null;
   nip29GroupId: string | null;
 };
-
 export type ChannelMember = {
   pubkey: string;
   role: ChannelRole;
@@ -41,7 +38,6 @@ export type ChannelMember = {
   joinedAt: string;
   displayName: string | null;
 };
-
 export type CreateChannelInput = {
   name: string;
   channelType: Exclude<ChannelType, "dm">;
@@ -49,11 +45,9 @@ export type CreateChannelInput = {
   description?: string;
   ttlSeconds?: number;
 };
-
 export type OpenDmInput = {
   pubkeys: string[];
 };
-
 export type UpdateChannelInput = {
   channelId: string;
   name?: string;
@@ -62,12 +56,10 @@ export type UpdateChannelInput = {
   /** Omit to leave unchanged, `null` to clear (permanent), or a positive number of seconds to set. */
   ttlSeconds?: number | null;
 };
-
 export type SetChannelTopicInput = {
   channelId: string;
   topic: string;
 };
-
 export type SetChannelPurposeInput = {
   channelId: string;
   purpose: string;
@@ -267,6 +259,15 @@ export type RelayMember = {
   createdAt: string;
 };
 
+import type {
+  RelayAgentDirectoryState,
+  RelayDirectoryRespondTo,
+} from "./relayDirectory";
+export type {
+  RelayAgentDirectoryState,
+  RelayDirectoryRespondTo,
+} from "./relayDirectory";
+
 export type RelayAgent = {
   pubkey: string;
   name: string;
@@ -275,8 +276,10 @@ export type RelayAgent = {
   channelIds: string[];
   capabilities: string[];
   status: "online" | "away" | "offline";
-  respondTo: RespondToMode | null;
+  respondTo: RelayDirectoryRespondTo | null;
   respondToAllowlist: string[];
+  ownerPubkey: string | null;
+  directoryState: RelayAgentDirectoryState;
 };
 
 export type ManagedAgentRuntimeLifecycle =
@@ -286,7 +289,6 @@ export type ManagedAgentRuntimeLifecycle =
   | "ready"
   | "failed"
   | "stopped";
-
 export type ManagedAgentRuntimeStatus = {
   pubkey: string;
   /** Exact submitted descriptor, present only on startup reconcile results. */
@@ -299,11 +301,9 @@ export type ManagedAgentRuntimeStatus = {
   error: string | null;
   logPath: string | null;
 };
-
 export type ManagedAgentBackend =
   | { type: "local" }
   | { type: "provider"; id: string; config: Record<string, unknown> };
-
 import type { RestartDiffEntry } from "./restartDiff";
 export type { JsonValue, RestartChange, RestartDiffEntry } from "./restartDiff";
 export type ManagedAgent = {

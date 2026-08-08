@@ -62,6 +62,8 @@ export function NewMessageScreen() {
     ownerProfiles,
     removeUser,
     searchError,
+    relayDirectoryError,
+    retryRelayDirectory,
     searchQuery,
     searchResults,
     selectUser,
@@ -553,6 +555,21 @@ export function NewMessageScreen() {
               </div>
             </PopoverContent>
           </Popover>
+          {relayDirectoryError ? (
+            <p
+              className="shrink-0 text-xs text-destructive"
+              data-testid="new-dm-directory-error"
+            >
+              Agent directory unavailable.{" "}
+              <button
+                className="underline"
+                onClick={() => void retryRelayDirectory()}
+                type="button"
+              >
+                Retry
+              </button>
+            </p>
+          ) : null}
 
           {isPending ? (
             <span

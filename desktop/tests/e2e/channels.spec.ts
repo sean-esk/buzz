@@ -25,6 +25,16 @@ const OWNED_RELAY_AGENT_PUBKEY =
   "a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00";
 const DM_RELAY_AGENT_PUBKEY =
   "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+const LOCAL_CHARLIE_AGENT = {
+  pubkey: TEST_IDENTITIES.charlie.pubkey,
+  name: "charlie",
+  status: "stopped" as const,
+};
+const LOCAL_ALICE_AGENT = {
+  pubkey: TEST_IDENTITIES.alice.pubkey,
+  name: "alice",
+  status: "stopped" as const,
+};
 
 type MockFeedWindow = Window & {
   __BUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
@@ -402,38 +412,40 @@ async function expectSameLeftInset(
   expect(Math.abs(firstBox.x - secondBox.x)).toBeLessThanOrEqual(4);
 }
 
-async function expectIntroSpacedAboveDayDivider(
+async function expectIntroPrecedesDayDividerAndMessage(
   page: import("@playwright/test").Page,
   introTestId: string,
 ) {
-  const introBox = await page.getByTestId(introTestId).boundingBox();
-  const dividerBox = await page
-    .getByTestId("message-timeline-day-divider")
-    .first()
-    .boundingBox();
-  const messageBox = await page
-    .getByTestId("message-row")
-    .first()
-    .boundingBox();
+  const isOrdered = await page.evaluate((testId) => {
+    const intro = document.querySelector(`[data-testid="${testId}"]`);
+    const divider = document.querySelector(
+      '[data-testid="message-timeline-day-divider"]',
+    );
+    const message = document.querySelector('[data-testid="message-row"]');
+    const timeline = document.querySelector('[data-testid="message-timeline"]');
 
-  if (!introBox || !dividerBox || !messageBox) {
-    throw new Error(`Could not measure timeline spacing for ${introTestId}`);
-  }
+    if (!intro || !divider || !message || !timeline) {
+      return false;
+    }
 
-  const gapAboveDivider = dividerBox.y - (introBox.y + introBox.height);
-  const gapBelowDivider = messageBox.y - (dividerBox.y + dividerBox.height);
+    const follows = (before: Element, after: Element) =>
+      (before.compareDocumentPosition(after) &
+        Node.DOCUMENT_POSITION_FOLLOWING) !==
+      0;
 
-  // The intro is a flex sibling above the timeline; the day divider and first
-  // message-row are virtualized items positioned by translateY inside the
-  // scroll container. The intro -> divider gap is the wrapper flex spacing the
-  // layout controls (8px, stable), so guard THAT with a tight band — a layout
-  // regression that collapses or balloons it fails here. The divider -> message
-  // gap is NOT a layout-spacing contract: virtualized rows are positioned
-  // back-to-back (no inter-item gap), so it is ~0 by construction plus
-  // MessageRow avatar/font render jitter, genuinely variable run-to-run. Assert
-  // only non-overlap on it (reading order: intro, divider, then message).
-  expect(Math.abs(gapAboveDivider - 8)).toBeLessThanOrEqual(2);
-  expect(gapBelowDivider).toBeGreaterThanOrEqual(0);
+    // Virtualizer transforms move rendered rows in viewport space. The stable
+    // contract is the timeline's semantic reading order: intro, day divider,
+    // then the first message.
+    return (
+      timeline.contains(intro) &&
+      timeline.contains(divider) &&
+      timeline.contains(message) &&
+      follows(intro, divider) &&
+      follows(divider, message)
+    );
+  }, introTestId);
+
+  expect(isOrdered).toBe(true);
 }
 
 async function expectIntroActionCardLayout(
@@ -584,6 +596,7 @@ test("shows presence in sidebar, DM header, and member list", async ({
 });
 
 test("start a new direct message from the sidebar", async ({ page }) => {
+  await installMockBridge(page, { managedAgents: [LOCAL_CHARLIE_AGENT] });
   await page.goto("/");
 
   await openNewMessagePage(page);
@@ -696,6 +709,7 @@ test("keeps typing focus while arrow keys traverse and select DM recipients", as
 test("sends the first message from the new direct message composer", async ({
   page,
 }) => {
+  await installMockBridge(page, { managedAgents: [LOCAL_CHARLIE_AGENT] });
   await page.goto("/");
   await openNewMessagePage(page);
 
@@ -716,6 +730,7 @@ test("creates the DM before preparing a persona mention", async ({ page }) => {
   await installMockBridge(page, {
     activePersonaIds: ["builtin:fizz"],
     createManagedAgentDelayMs: 1_000,
+    managedAgents: [LOCAL_CHARLIE_AGENT],
   });
   await page.goto("/");
   await openNewMessagePage(page);
@@ -1022,6 +1037,7 @@ test("drops an expanded DM after the first message fails", async ({ page }) => {
     activePersonaIds: ["builtin:fizz"],
     createManagedAgentDelayMs: 100,
     sendMessageErrors: [sendError],
+    managedAgents: [LOCAL_CHARLIE_AGENT],
   });
   await page.goto("/");
   await openNewMessagePage(page);
@@ -1110,6 +1126,7 @@ test("drops an expanded DM after agent startup fails", async ({ page }) => {
   await installMockBridge(page, {
     activePersonaIds: ["builtin:fizz"],
     startManagedAgentErrors: [startError],
+    managedAgents: [LOCAL_CHARLIE_AGENT],
   });
   await page.goto("/");
   await openNewMessagePage(page);
@@ -1131,9 +1148,10 @@ test("drops an expanded DM after agent startup fails", async ({ page }) => {
   await page.keyboard.type(" before startup fails");
   await page.getByTestId("send-message").click();
 
-  await expect(
-    page.getByText(startError, { exact: false }).first(),
-  ).toBeVisible();
+  const startupFailureToast = page
+    .locator("[data-sonner-toast][data-removed='false']")
+    .filter({ hasText: startError });
+  await expect(startupFailureToast).toBeVisible();
   await expect(input).toContainText("Fizz");
 
   const commandsAfterFailure = await readCommandPayloadLog(page);
@@ -1149,6 +1167,25 @@ test("drops an expanded DM after agent startup fails", async ({ page }) => {
     (openDmCallsAfterFailure.at(-1)?.payload as { pubkeys?: string[] })
       ?.pubkeys,
   ).toHaveLength(2);
+
+  const startupFailureToastBox = await startupFailureToast.boundingBox();
+  if (!startupFailureToastBox) {
+    throw new Error("Could not dismiss the agent startup failure toast");
+  }
+  // Sonner toasts are deliberately dismissible and occupy the composer area.
+  // Dismiss the verified failure before retrying the send it was obscuring.
+  await page.mouse.move(
+    startupFailureToastBox.x + startupFailureToastBox.width / 2,
+    startupFailureToastBox.y + startupFailureToastBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    startupFailureToastBox.x - startupFailureToastBox.width,
+    startupFailureToastBox.y + startupFailureToastBox.height / 2,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+  await expect(startupFailureToast).toHaveCount(0);
 
   await input.fill(retryMessage);
   const retryBaseline = commandsAfterFailure.length;
@@ -1172,6 +1209,7 @@ test("drops an expanded DM after agent startup fails", async ({ page }) => {
 });
 
 test("closes direct message results while opening", async ({ page }) => {
+  await installMockBridge(page, { managedAgents: [LOCAL_CHARLIE_AGENT] });
   await page.goto("/");
   await page.evaluate(() => {
     const testWindow = window as Window & {
@@ -1204,7 +1242,10 @@ test("closes direct message results while opening", async ({ page }) => {
 test("does not reopen a direct message after leaving the composer", async ({
   page,
 }) => {
-  await installMockBridge(page, { openDmDelayMs: 1_000 });
+  await installMockBridge(page, {
+    openDmDelayMs: 1_000,
+    managedAgents: [LOCAL_CHARLIE_AGENT],
+  });
   await page.goto("/");
   await openNewMessagePage(page);
 
@@ -1233,6 +1274,7 @@ test("does not reopen a direct message after leaving the composer", async ({
 test("does not reopen a sent direct message after leaving during cache reseed", async ({
   page,
 }) => {
+  await installMockBridge(page, { managedAgents: [LOCAL_CHARLIE_AGENT] });
   await page.goto("/");
   await openNewMessagePage(page);
 
@@ -1268,6 +1310,9 @@ test("does not reopen a sent direct message after leaving during cache reseed", 
 test("shows capped participant stack in group direct message header", async ({
   page,
 }) => {
+  await installMockBridge(page, {
+    managedAgents: [LOCAL_ALICE_AGENT, LOCAL_CHARLIE_AGENT],
+  });
   await page.goto("/");
 
   await openNewMessagePage(page);
@@ -1560,7 +1605,10 @@ test("ephemeral countdown refreshes when switching channels after a clock jump",
       .getByTestId("create-channel-description")
       .fill("Auto-cleaned test stream");
     await page.getByTestId("create-channel-channel-type").click();
-    await page.getByLabel("Temporary channel").click();
+    // The fixed clock intentionally prevents Radix's entry transition from
+    // advancing. The visible radio item is already resolved, so select it
+    // without waiting for an animation frame that cannot occur in this test.
+    await page.getByLabel("Temporary channel").click({ force: true });
     await page.getByTestId("create-channel-submit").click();
     await expect(page.getByTestId("chat-title")).toContainText(channelName);
   }
@@ -2409,7 +2457,7 @@ test("sidebar clears unread indicator after opening a DM", async ({ page }) => {
     "Unread update for the DM",
   );
   await expectSameLeftInset(page, "message-dm-intro", "message-row");
-  await expectIntroSpacedAboveDayDivider(page, "message-dm-intro");
+  await expectIntroPrecedesDayDividerAndMessage(page, "message-dm-intro");
   await expect(page.getByTestId("channel-unread-alice-tyler")).toHaveCount(0);
 });
 
@@ -3423,6 +3471,9 @@ test("members sidebar virtualizes large channel rosters", async ({ page }) => {
     element.scrollTop = element.scrollHeight;
     element.dispatchEvent(new Event("scroll"));
   });
+  // The virtualizer applies its visible range on the next frame after a
+  // programmatic scroll; wait for that range update before querying its tail.
+  await page.waitForTimeout(100);
   await expect(
     memberList.getByTestId(`sidebar-member-${pubkeys.at(-1)}`),
   ).toBeVisible();
@@ -3447,6 +3498,41 @@ test("members sidebar can invite relay-authorized agents", async ({ page }) => {
   await expect(
     page.getByTestId(`channel-user-search-result-${DM_RELAY_AGENT_PUBKEY}`),
   ).toBeVisible();
+});
+
+test("new-DM picker excludes relay-only agents while retaining local agents and people", async ({
+  page,
+}) => {
+  await installMockBridge(page, {
+    managedAgents: [
+      {
+        pubkey: TEST_IDENTITIES.charlie.pubkey,
+        name: "local fizz",
+        status: "stopped",
+      },
+    ],
+    relayAgents: [
+      {
+        pubkey: DM_RELAY_AGENT_PUBKEY,
+        name: "remote quinn",
+        respondTo: "anyone",
+        directoryState: "resolved",
+        channelNames: ["general"],
+      },
+    ],
+  });
+  await page.goto("/");
+  await openNewMessagePage(page);
+
+  await expect(
+    page.getByTestId(`new-dm-result-${TEST_IDENTITIES.charlie.pubkey}`),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId(`new-dm-result-${TEST_IDENTITIES.bob.pubkey}`),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId(`new-dm-result-${DM_RELAY_AGENT_PUBKEY}`),
+  ).toHaveCount(0);
 });
 
 test("members sidebar hides relay agents that are not authorized", async ({

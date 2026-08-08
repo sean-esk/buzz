@@ -326,13 +326,14 @@ export function useRelayAgentsQuery(options?: { enabled?: boolean }) {
     queryKey: relayAgentsQueryKey,
     queryFn: listRelayAgents,
     staleTime: 30_000,
-    // Relay agent profiles (kind:10100) are near-static and the backing
-    // `list_relay_agents` command is an unfiltered relay query for the whole
-    // profile set — mounted on ~13 always-live surfaces (channel screen,
+    // The verified kind:30177 directory and kind:39002 memberships are
+    // near-static. The backing `list_relay_agents` command runs across ~13
+    // always-live surfaces (channel screen,
     // members bar, mentions, sidebar, profile popovers), so a tight interval
     // re-pulls the full set app-wide. This poll is also the ONLY refresh path:
     // the `agents-data-changed` event fires only for local persona/team/managed
-    // reconcile (kinds PERSONA/TEAM/MANAGED_AGENT), never for kind:10100. So we
+    // reconcile (kinds PERSONA/TEAM/MANAGED_AGENT), never for remote directory
+    // changes. So we
     // keep polling but at a relaxed cadence and pause it while backgrounded.
     refetchInterval: 5 * 60_000,
     refetchIntervalInBackground: false,

@@ -44,6 +44,25 @@ function autocomplete(page: import("@playwright/test").Page) {
     .getByTestId("mention-autocomplete");
 }
 
+async function hoverProfilePopoverTrigger(
+  page: import("@playwright/test").Page,
+  message: import("@playwright/test").Locator,
+) {
+  // UserProfilePopover opens after its deliberate 500 ms hover delay. Target
+  // the outer role=button trigger rather than its nested avatar button, then
+  // let that interaction settle before inspecting the portalled content.
+  const trigger = message.locator("[role='button']").first();
+  const popover = page.locator(
+    '[data-testid="user-profile-popover"][data-state="open"]',
+  );
+  await expect(trigger).toBeVisible();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await trigger.hover();
+    await page.waitForTimeout(600);
+    if (await popover.isVisible()) return;
+  }
+}
+
 async function readCommandLog(page: import("@playwright/test").Page) {
   return page.evaluate(() => {
     return (
@@ -70,9 +89,9 @@ async function readCommandPayloadLog(page: import("@playwright/test").Page) {
 
 async function readOutgoingMentionPubkeys(
   page: import("@playwright/test").Page,
-  content: string,
+  expectedContent: string,
 ) {
-  return page.evaluate((expectedContent) => {
+  return page.evaluate((content) => {
     const entries =
       (
         window as Window & {
@@ -83,7 +102,7 @@ async function readOutgoingMentionPubkeys(
         }
       ).__BUZZ_E2E_COMMAND_LOG__ ?? [];
 
-    for (const entry of entries) {
+    for (const entry of entries.toReversed()) {
       if (entry.command !== "plugin:websocket|send") continue;
       const data = (
         entry.payload as { message?: { data?: string } } | undefined
@@ -95,17 +114,23 @@ async function readOutgoingMentionPubkeys(
           string,
           { content?: string; tags?: string[][] },
         ];
-        if (frame[0] !== "EVENT" || frame[1]?.content !== expectedContent) {
+        if (frame[0] !== "EVENT" || frame[1]?.content !== content) {
           continue;
         }
         return (frame[1].tags ?? [])
           .filter((tag) => tag[0] === "p" && tag[1])
           .map((tag) => tag[1]);
-      } catch {}
+      } catch (error) {
+        if (data.includes(content)) {
+          throw new Error(
+            `Malformed outbound EVENT for ${JSON.stringify(content)}: ${String(error)}`,
+          );
+        }
+      }
     }
 
     return null;
-  }, content);
+  }, expectedContent);
 }
 
 function commandCount(commands: string[], command: string) {
@@ -298,15 +323,43 @@ test("relay-only shared agents emit an outbound mention tag when selected", asyn
   const aliceRow = autocomplete(page).locator("button", { hasText: "alice" });
   await expect(aliceRow).toBeVisible();
   await aliceRow.click();
-  await page.keyboard.type("please reply");
+  await page.keyboard.type(" please reply");
 
-  const content = "Ask @alice please reply";
+  const content = "Ask @alice  please reply";
   await expect(input).toHaveText(content);
   await page.getByTestId("send-message").click();
 
   await expect
     .poll(() => readOutgoingMentionPubkeys(page, content))
-    .toContain(TEST_IDENTITIES.alice.pubkey);
+    .toEqual([TEST_IDENTITIES.alice.pubkey]);
+});
+
+test("a verified other-owner bot member is selectable and emits its exact tag", async ({
+  page,
+}) => {
+  const neoPubkey = "5a".repeat(32);
+  await installMockBridge(page, {
+    relayAgents: [
+      {
+        pubkey: neoPubkey,
+        name: "Neo",
+        ownerPubkey: TEST_IDENTITIES.alice.pubkey,
+        respondTo: "anyone",
+        directoryState: "resolved",
+        botChannelNames: ["general"],
+      },
+    ],
+  });
+  await page.goto("/");
+  await page.getByTestId("channel-general").click();
+  const input = page.getByTestId("message-input");
+  await input.fill("@Neo");
+  await autocomplete(page).getByText("Neo").click();
+  await page.keyboard.type(" help");
+  await page.getByTestId("send-message").click();
+  await expect
+    .poll(() => readOutgoingMentionPubkeys(page, "@Neo  help"))
+    .toEqual([neoPubkey]);
 });
 
 test("thread autocomplete keeps multiple long names readable in a narrow panel", async ({
@@ -1040,6 +1093,47 @@ test("relay-only anyone agents are visible when a channel is shared", async ({
   await expect(autocomplete(page).getByText("quinn")).toBeVisible();
 });
 
+for (const directoryState of ["incomplete", "untrusted"] as const) {
+  test(`relay agents with ${directoryState} directory state stay hidden from mentions`, async ({
+    page,
+  }) => {
+    await installMockBridge(page, {
+      relayAgents: [
+        {
+          pubkey: ALLOWLIST_RELAY_AGENT_PUBKEY,
+          name: "quinn",
+          respondTo: "anyone",
+          directoryState,
+          botChannelIds: [GENERAL_CHANNEL_ID],
+        },
+      ],
+    });
+    await page.goto("/");
+    await page.getByTestId("channel-general").click();
+    await page.getByTestId("message-input").fill("@quinn");
+    await expect(autocomplete(page)).toHaveCount(0);
+  });
+}
+
+test("settled directory absence permits an in-channel bot mention", async ({
+  page,
+}) => {
+  await installMockBridge(page, {
+    relayAgents: [
+      {
+        pubkey: TEST_IDENTITIES.alice.pubkey,
+        name: "alice",
+        directoryState: "absent",
+        botChannelIds: [GENERAL_CHANNEL_ID],
+      },
+    ],
+  });
+  await page.goto("/");
+  await page.getByTestId("channel-general").click();
+  await page.getByTestId("message-input").fill("@alice");
+  await expect(autocomplete(page).getByText("alice")).toBeVisible();
+});
+
 test("relay-only excluded agents stay hidden from channel mentions", async ({
   page,
 }) => {
@@ -1608,7 +1702,7 @@ test("profile-only agent author hides actions without agent access", async ({
     .getByTestId("message-row")
     .filter({ hasText: "Mira status update." })
     .first();
-  await messageRow.locator("button").first().hover();
+  await hoverProfilePopoverTrigger(page, messageRow);
 
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',
@@ -1914,10 +2008,10 @@ test("hovering avatar opens popover, clicking opens profile panel", async ({
   await expect(page.getByTestId("chat-title")).toHaveText("general");
 
   const firstMessage = page.getByTestId("message-row").first();
-  const avatarButton = firstMessage.locator("button").first();
+  const avatarButton = firstMessage.locator("[role='button']").first();
 
   // Hover should open the popover
-  await avatarButton.hover();
+  await hoverProfilePopoverTrigger(page, firstMessage);
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',
   );
@@ -2036,7 +2130,7 @@ test("agent profile popover shows its owner", async ({ page }) => {
     .getByTestId("message-row")
     .filter({ hasText: "Bumble checking in." })
     .first();
-  await bumbleMessage.locator("button").first().hover();
+  await hoverProfilePopoverTrigger(page, bumbleMessage);
 
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',
@@ -2076,7 +2170,7 @@ test("agent profile popover labels an agent owned by the viewer as you", async (
     .getByTestId("message-row")
     .filter({ hasText: "Bumble checking in." })
     .first();
-  await bumbleMessage.locator("button").first().hover();
+  await hoverProfilePopoverTrigger(page, bumbleMessage);
 
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',
@@ -2116,7 +2210,7 @@ test("agent profile popover falls back to the owner's pubkey", async ({
     .getByTestId("message-row")
     .filter({ hasText: "Bumble checking in." })
     .first();
-  await bumbleMessage.locator("button").first().hover();
+  await hoverProfilePopoverTrigger(page, bumbleMessage);
 
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',
@@ -2144,7 +2238,7 @@ test("human profile popover does not show an owner", async ({ page }) => {
     .getByTestId("message-row")
     .filter({ hasText: "Bob checking in." })
     .first();
-  await bobMessage.locator("button").first().hover();
+  await hoverProfilePopoverTrigger(page, bobMessage);
 
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',
@@ -2175,7 +2269,7 @@ test("owned bot profile exposes message and huddle actions", async ({
     .getByTestId("message-row")
     .filter({ hasText: "Indexing the channel catalog now." })
     .first();
-  await charlieMessage.locator("button").first().hover();
+  await hoverProfilePopoverTrigger(page, charlieMessage);
 
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',
@@ -2261,7 +2355,7 @@ test("profile popover wave sends a direct message for a human profile", async ({
     .getByTestId("message-row")
     .filter({ hasText: "Bob says hello." })
     .first();
-  await bobMessage.locator("button").first().hover();
+  await hoverProfilePopoverTrigger(page, bobMessage);
 
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',
@@ -2355,7 +2449,7 @@ test("delayed inaccessible agent profile keeps all actions hidden", async ({
     .getByTestId("message-row")
     .filter({ hasText: "Orbit checking in." })
     .first();
-  await orbitMessage.locator("button").first().hover();
+  await hoverProfilePopoverTrigger(page, orbitMessage);
 
   const profilePopover = page.locator(
     '[data-testid="user-profile-popover"][data-state="open"]',

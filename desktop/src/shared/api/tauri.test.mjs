@@ -54,7 +54,51 @@ const { isRateLimited, resetRateLimitGate } = await import(
 
 // Import the production classifier from tauri.ts — tests must exercise the
 // real function, not a local copy, so a logic change is always caught here.
-const { applyTauriRateLimitIfNeeded } = await import("./tauri.ts");
+const { applyTauriRateLimitIfNeeded, fromRawRelayAgent } = await import(
+  "./tauri.ts"
+);
+
+test("fromRawRelayAgent maps public directory ownership, policy, and state", () => {
+  const agent = fromRawRelayAgent({
+    pubkey: "a".repeat(64),
+    name: "Neo",
+    agent_type: "agent",
+    channels: ["general"],
+    channel_ids: ["general"],
+    capabilities: [],
+    status: "offline",
+    owner_pubkey: "b".repeat(64),
+    respond_to: "nobody",
+    respond_to_allowlist: [],
+    directory_state: "incomplete",
+  });
+  assert.equal(agent.ownerPubkey, "b".repeat(64));
+  assert.equal(agent.respondTo, "nobody");
+  assert.equal(agent.directoryState, "incomplete");
+});
+
+test("fromRawRelayAgent fails closed for sparse, null, and omitted directory fields", () => {
+  for (const raw of [
+    {},
+    { owner_pubkey: null, respond_to: null, respond_to_allowlist: null },
+    { directory_state: undefined },
+  ]) {
+    const agent = fromRawRelayAgent({
+      pubkey: "a".repeat(64),
+      name: "Neo",
+      agent_type: "agent",
+      channels: [],
+      channel_ids: [],
+      capabilities: [],
+      status: "offline",
+      ...raw,
+    });
+    assert.equal(agent.ownerPubkey, null);
+    assert.equal(agent.respondTo, null);
+    assert.deepEqual(agent.respondToAllowlist, []);
+    assert.equal(agent.directoryState, "incomplete");
+  }
+});
 
 function resetGate(startMs = 0) {
   pendingTimers.clear();

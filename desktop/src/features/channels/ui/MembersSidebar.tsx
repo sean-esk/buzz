@@ -8,6 +8,7 @@ import {
   useChannelsQuery,
 } from "@/features/channels/hooks";
 import { attachManagedAgentToChannel } from "@/features/agents/channelAgents";
+import { RelayDirectoryErrorNotice } from "@/features/agents/ui/RelayDirectoryErrorNotice";
 import {
   coalesceAgentAutocompleteCandidates,
   getMentionableAgentPubkeys,
@@ -286,6 +287,8 @@ export function MembersSidebar({
       eligibilityScope: { type: "community" },
       managedAgentPubkeys: managedAgentsByPubkey.keys(),
       relayAgents: relayAgentsQuery.data,
+      relayDirectorySettled:
+        relayAgentsQuery.data !== undefined && relayAgentsQuery.error === null,
       sharedChannelIds,
     });
 
@@ -338,7 +341,7 @@ export function MembersSidebar({
         displayName: agent.name,
         avatarUrl: null,
         nip05Handle: null,
-        ownerPubkey: null,
+        ownerPubkey: agent.ownerPubkey,
         isAgent: true,
       });
     }
@@ -380,6 +383,7 @@ export function MembersSidebar({
     memberPubkeys,
     normalizedDeferredSearchQuery,
     relayAgentsQuery.data,
+    relayAgentsQuery.error,
     userSearchResults,
   ]);
   const isAddSearchLoading =
@@ -744,6 +748,11 @@ export function MembersSidebar({
                 {PRIVATE_CHANNEL_ADD_DENIED_MESSAGE}
               </p>
             ) : null}
+            <RelayDirectoryErrorNotice
+              error={relayAgentsQuery.error}
+              onRetry={relayAgentsQuery.refetch}
+              testId="members-sidebar-directory-error"
+            />
           </DialogHeader>
 
           <div className="max-h-[calc(100vh-12rem)] overflow-y-auto pb-6">

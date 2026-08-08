@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::PathBuf, process::Child};
 
+use super::{DirectoryRespondTo, DirectoryState};
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BackendKind {
@@ -18,13 +20,10 @@ pub struct AgentDefinition {
     pub display_name: String,
     pub avatar_url: Option<String>,
     pub system_prompt: String,
-    /// Preferred ACP runtime ID (e.g., 'goose', 'claude', 'codex'). Determines which agent binary
-    /// Buzz spawns. When deploying from this persona, this runtime is pre-selected in the UI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime: Option<String>,
-    /// Opaque, harness-specific model identifier string. Format depends on the runtime and its LLM
-    /// provider (e.g., 'goose-claude-4-6-opus' for Databricks, 'claude-opus-4-7' for Anthropic
-    /// direct). Buzz stores and passes through without interpretation.
+    /// Opaque, harness-specific model identifier string. Format depends on the runtime and its
+    /// LLM provider. Buzz stores and passes it through without interpretation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     /// LLM inference provider (e.g., 'databricks', 'anthropic', 'openai'). Optional — when set,
@@ -204,17 +203,23 @@ pub struct RelayAgentInfo {
     pub capabilities: Vec<String>,
     pub status: String,
     #[serde(default)]
-    pub respond_to: Option<RespondTo>,
+    pub respond_to: Option<DirectoryRespondTo>,
     #[serde(default)]
     pub respond_to_allowlist: Vec<String>,
+    /// Author of the selected kind:30177 directory event.
+    #[serde(default)]
+    pub owner_pubkey: Option<String>,
+    /// Trust state; only `Resolved` entries may be considered invocable.
+    #[serde(default)]
+    pub directory_state: DirectoryState,
 }
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ManagedAgentRecord {
     pub pubkey: String,
     pub name: String,
     #[serde(default)]
     pub persona_id: Option<String>,
-    /// Team this instance was deployed from. Resolves runtime team instructions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub team_id: Option<String>,
     /// nsec private key. Held in memory but persisted to the OS keyring (keyed
@@ -959,7 +964,6 @@ pub fn resolve_mint_behavioral_defaults(
             "respond-to mode 'allowlist' requires at least one pubkey in the allowlist".to_string(),
         );
     }
-
     let parallelism = match input_parallelism {
         // Explicit input is validated here too (not just at the command
         // call sites) so the "validated when present" contract on
@@ -987,11 +991,9 @@ pub fn resolve_mint_behavioral_defaults(
         parallelism,
     })
 }
-
 mod catalog_source;
 pub use catalog_source::CatalogSource;
 mod requests;
 pub use requests::*;
-
 #[cfg(test)]
 mod tests;

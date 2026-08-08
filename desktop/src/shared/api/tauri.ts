@@ -115,6 +115,8 @@ type RawRelayAgent = {
   status: RelayAgent["status"];
   respond_to?: RelayAgent["respondTo"];
   respond_to_allowlist?: string[];
+  owner_pubkey?: string | null;
+  directory_state?: RelayAgent["directoryState"];
 };
 
 import type { RestartDiffEntry as RawRestartDiffEntry } from "./restartDiff";
@@ -122,7 +124,6 @@ export type RawManagedAgent = {
   pubkey: string;
   name: string;
   persona_id: string | null;
-  // Optional: pre-feature fixtures may omit it. The record's harness/runtime id.
   runtime?: string | null;
   team_id?: string | null;
   relay_url: string;
@@ -159,7 +160,6 @@ export type RawManagedAgent = {
   auto_restart_on_config_change?: boolean;
   backend: ManagedAgentBackend;
   backend_agent_id: string | null;
-  // Pre-feature fixtures may omit these; mapped to "owner-only"/[] in fromRawManagedAgent.
   respond_to?: ManagedAgent["respondTo"];
   respond_to_allowlist?: string[];
 };
@@ -308,8 +308,6 @@ export async function invokeTauri<T>(
     return await tauriInvoke<T>(command, args);
   } catch (error) {
     const err = toTauriError(error);
-    // Rust emits `relay rate-limited:` for HTTP 429 responses. Activate the
-    // shared gate so the TS relay client backs off for the same window.
     applyTauriRateLimitIfNeeded(err.message);
     throw err;
   }
@@ -659,7 +657,7 @@ export async function createAuthEvent(input: {
   return JSON.parse(eventJson) as RelayEvent;
 }
 
-function fromRawRelayAgent(agent: RawRelayAgent): RelayAgent {
+export function fromRawRelayAgent(agent: RawRelayAgent): RelayAgent {
   return {
     pubkey: agent.pubkey,
     name: agent.name,
@@ -670,6 +668,8 @@ function fromRawRelayAgent(agent: RawRelayAgent): RelayAgent {
     status: agent.status,
     respondTo: agent.respond_to ?? null,
     respondToAllowlist: agent.respond_to_allowlist ?? [],
+    ownerPubkey: agent.owner_pubkey ?? null,
+    directoryState: agent.directory_state ?? "incomplete",
   };
 }
 

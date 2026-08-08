@@ -110,11 +110,17 @@ type MockManagedAgentRuntimeSeed = {
 type MockRelayAgentSeed = {
   pubkey: string;
   name: string;
+  ownerPubkey?: string;
   agentType?: string;
   capabilities?: string[];
   respondTo?: RawRelayAgent["respond_to"];
   respondToAllowlist?: string[];
+  directoryState?: RawRelayAgent["directory_state"] | "absent";
+  botChannelNames?: string[];
+  botChannelIds?: string[];
+  /** @deprecated compatibility alias for botChannelNames. */
   channelNames?: string[];
+  /** @deprecated compatibility alias for botChannelIds. */
   channelIds?: string[];
   status?: PresenceStatus;
 };
@@ -815,8 +821,10 @@ type RawRelayAgent = {
   channel_ids: string[];
   capabilities: string[];
   status: PresenceStatus;
-  respond_to?: "owner-only" | "allowlist" | "anyone";
+  respond_to?: "owner-only" | "allowlist" | "anyone" | "nobody";
   respond_to_allowlist?: string[];
+  owner_pubkey?: string | null;
+  directory_state?: "resolved" | "incomplete" | "untrusted";
 };
 
 type RawManagedAgent = {
@@ -1648,6 +1656,7 @@ function cloneRelayAgent(agent: RawRelayAgent): RawRelayAgent {
     channels: [...agent.channels],
     channel_ids: [...agent.channel_ids],
     capabilities: [...agent.capabilities],
+    respond_to_allowlist: [...(agent.respond_to_allowlist ?? [])],
   };
 }
 
@@ -2261,23 +2270,43 @@ function resetMockRelayAgents(config?: E2eConfig) {
   }));
 
   for (const seed of config?.mock?.relayAgents ?? []) {
+    const botChannelIds = seed.botChannelIds ?? seed.channelIds ?? [];
+    const botChannelNames = seed.botChannelNames ?? seed.channelNames ?? [];
     const channels = mockChannels.filter((channel) => {
       return (
-        seed.channelIds?.includes(channel.id) ||
-        seed.channelNames?.includes(channel.name)
+        botChannelIds.includes(channel.id) ||
+        botChannelNames.includes(channel.name)
       );
     });
-    mockRelayAgents.push({
-      pubkey: seed.pubkey,
-      name: seed.name,
-      agent_type: seed.agentType ?? "goose",
-      channels: channels.map((channel) => channel.name),
-      channel_ids: channels.map((channel) => channel.id),
-      capabilities: seed.capabilities ?? ["messages", "channels", "mcp"],
-      status: seed.status ?? "online",
-      respond_to: seed.respondTo ?? "owner-only",
-      respond_to_allowlist: seed.respondToAllowlist ?? [],
-    });
+    if (seed.directoryState !== "absent") {
+      mockRelayAgents.push({
+        pubkey: seed.pubkey,
+        name: seed.name,
+        agent_type: seed.agentType ?? "goose",
+        channels: channels.map((channel) => channel.name),
+        channel_ids: channels.map((channel) => channel.id),
+        capabilities: seed.capabilities ?? ["messages", "channels", "mcp"],
+        status: seed.status ?? "online",
+        respond_to: seed.respondTo ?? "owner-only",
+        respond_to_allowlist: seed.respondToAllowlist ?? [],
+        owner_pubkey: seed.ownerPubkey ?? MOCK_IDENTITY_PUBKEY,
+        directory_state: seed.directoryState ?? "resolved",
+      });
+    }
+    for (const channel of channels) {
+      if (channel.members.some((member) => member.pubkey === seed.pubkey)) {
+        continue;
+      }
+      channel.members.push({
+        pubkey: seed.pubkey,
+        role: "bot",
+        is_agent: true,
+        joined_at: new Date().toISOString(),
+        display_name: seed.name,
+      });
+      syncMockChannel(channel);
+      touchMockChannel(channel);
+    }
   }
 }
 
@@ -3278,6 +3307,8 @@ const defaultMockRelayAgents: RawRelayAgent[] = [
     status: "online",
     respond_to: "anyone",
     respond_to_allowlist: [],
+    owner_pubkey: MOCK_IDENTITY_PUBKEY,
+    directory_state: "resolved",
   },
   {
     pubkey: CHARLIE_PUBKEY,
@@ -3289,6 +3320,8 @@ const defaultMockRelayAgents: RawRelayAgent[] = [
     status: "away",
     respond_to: "anyone",
     respond_to_allowlist: [],
+    owner_pubkey: MOCK_IDENTITY_PUBKEY,
+    directory_state: "resolved",
   },
 ];
 let mockRelayAgents: RawRelayAgent[] = defaultMockRelayAgents.map((agent) => ({
@@ -3613,6 +3646,8 @@ function syncMockRelayAgentsFromManagedAgents() {
             : "offline",
         respond_to: agent.respond_to,
         respond_to_allowlist: [...agent.respond_to_allowlist],
+        owner_pubkey: MOCK_IDENTITY_PUBKEY,
+        directory_state: "resolved",
       };
     },
   );

@@ -131,6 +131,36 @@ test("relayAgentCanRespondInChannel: requires exact channel membership and viewe
   );
 });
 
+test("relay directory policy honors implicit owner access and nobody denial", () => {
+  const ownerOnly = {
+    ownerPubkey: OWNER_PUBKEY,
+    respondTo: "owner-only",
+    respondToAllowlist: [],
+    channelIds: ["general"],
+    directoryState: "resolved",
+  };
+  const allowlist = {
+    ...ownerOnly,
+    respondTo: "allowlist",
+    respondToAllowlist: [CURRENT_PUBKEY],
+  };
+  const nobody = { ...ownerOnly, respondTo: "nobody" };
+
+  assert.equal(
+    relayAgentCanRespondInChannel(ownerOnly, "general", OWNER_PUBKEY),
+    true,
+  );
+  assert.equal(
+    relayAgentCanRespondInChannel(allowlist, "general", OWNER_PUBKEY),
+    true,
+    "the owner is implicitly allowlisted",
+  );
+  assert.equal(
+    relayAgentCanRespondInChannel(nobody, "general", OWNER_PUBKEY),
+    false,
+  );
+});
+
 test("getMentionableAgentPubkeys: keeps managed agents and shared relay agents", () => {
   const result = getMentionableAgentPubkeys({
     eligibilityScope: { type: "community" },
@@ -156,6 +186,7 @@ test("getMentionableAgentPubkeys: keeps managed agents and shared relay agents",
         channelIds: ["other"],
       },
     ],
+    relayDirectorySettled: true,
     sharedChannelIds: new Set(["general"]),
   });
 
@@ -175,6 +206,7 @@ test("getMentionableAgentPubkeys: scopes channel composers and fails closed with
     currentPubkey: CURRENT_PUBKEY,
     managedAgentPubkeys: [PUB_A],
     relayAgents,
+    relayDirectorySettled: true,
     sharedChannelIds: new Set(["general"]),
   };
 
@@ -315,6 +347,7 @@ test("shouldHideAgentFromMentions: shows member agents with unknown invocability
       pubkey: PUB_A,
       mentionableAgentPubkeys: new Set(),
       directoryAgentPubkeys: new Set(),
+      relayDirectorySettled: true,
     }),
     false,
   );
@@ -331,6 +364,91 @@ test("shouldHideAgentFromMentions: normalizes the pubkey before lookup", () => {
       pubkey: mixedCase,
       mentionableAgentPubkeys: new Set(),
       directoryAgentPubkeys: new Set([normalized]),
+      relayDirectorySettled: true,
+    }),
+    true,
+  );
+});
+
+test("shouldHideAgentFromMentions: only settled absence permits member fallback", () => {
+  const base = {
+    isAgent: true,
+    isMember: true,
+    pubkey: PUB_A,
+    mentionableAgentPubkeys: new Set(),
+    directoryAgentPubkeys: new Set(),
+  };
+  assert.equal(
+    shouldHideAgentFromMentions({ ...base, relayDirectorySettled: false }),
+    true,
+    "loading and errors fail closed",
+  );
+  assert.equal(
+    shouldHideAgentFromMentions({ ...base, relayDirectorySettled: true }),
+    false,
+    "a bot member can use the channel-only absence fallback",
+  );
+  assert.equal(
+    shouldHideAgentFromMentions({
+      ...base,
+      directoryAgentPubkeys: new Set([PUB_A]),
+      relayDirectorySettled: true,
+    }),
+    true,
+    "resolved denial, incomplete, and untrusted entries never fall through",
+  );
+});
+
+test("getMentionableAgentPubkeys: direct messages never inherit channel policy", () => {
+  const result = getMentionableAgentPubkeys({
+    currentPubkey: CURRENT_PUBKEY,
+    eligibilityScope: { type: "direct-message" },
+    managedAgentPubkeys: [PUB_A],
+    relayAgents: [
+      {
+        pubkey: PUB_B,
+        ownerPubkey: OWNER_PUBKEY,
+        respondTo: "anyone",
+        respondToAllowlist: [],
+        channelIds: ["general"],
+        directoryState: "resolved",
+      },
+    ],
+    relayDirectorySettled: true,
+    sharedChannelIds: new Set(["general"]),
+  });
+  assert.deepEqual(result, new Set([PUB_A]));
+});
+
+test("omitted relay-directory settlement fails closed", () => {
+  const relayAgent = {
+    pubkey: PUB_B,
+    ownerPubkey: OWNER_PUBKEY,
+    respondTo: "anyone",
+    respondToAllowlist: [],
+    channelIds: ["general"],
+    directoryState: "resolved",
+  };
+  assert.deepEqual(
+    getMentionableAgentPubkeys({
+      currentPubkey: CURRENT_PUBKEY,
+      eligibilityScope: { type: "community" },
+      managedAgentPubkeys: [],
+      relayAgents: [relayAgent],
+      sharedChannelIds: new Set(["general"]),
+    }),
+    new Set(),
+  );
+});
+
+test("omitted relay-directory settlement hides member agents", () => {
+  assert.equal(
+    shouldHideAgentFromMentions({
+      isAgent: true,
+      isMember: true,
+      pubkey: PUB_A,
+      mentionableAgentPubkeys: new Set(),
+      directoryAgentPubkeys: new Set(),
     }),
     true,
   );
