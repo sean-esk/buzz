@@ -412,32 +412,40 @@ async function expectSameLeftInset(
   expect(Math.abs(firstBox.x - secondBox.x)).toBeLessThanOrEqual(4);
 }
 
-async function expectIntroSpacedAboveDayDivider(
+async function expectIntroPrecedesDayDividerAndMessage(
   page: import("@playwright/test").Page,
   introTestId: string,
 ) {
-  const introBox = await page.getByTestId(introTestId).boundingBox();
-  const dividerBox = await page
-    .getByTestId("message-timeline-day-divider")
-    .first()
-    .boundingBox();
-  const messageBox = await page
-    .getByTestId("message-row")
-    .first()
-    .boundingBox();
+  const isOrdered = await page.evaluate((testId) => {
+    const intro = document.querySelector(`[data-testid="${testId}"]`);
+    const divider = document.querySelector(
+      '[data-testid="message-timeline-day-divider"]',
+    );
+    const message = document.querySelector('[data-testid="message-row"]');
+    const timeline = document.querySelector('[data-testid="message-timeline"]');
 
-  if (!introBox || !dividerBox || !messageBox) {
-    throw new Error(`Could not measure timeline spacing for ${introTestId}`);
-  }
+    if (!intro || !divider || !message || !timeline) {
+      return false;
+    }
 
-  const gapAboveDivider = dividerBox.y - (introBox.y + introBox.height);
-  const gapBelowDivider = messageBox.y - (dividerBox.y + dividerBox.height);
+    const follows = (before: Element, after: Element) =>
+      (before.compareDocumentPosition(after) &
+        Node.DOCUMENT_POSITION_FOLLOWING) !==
+      0;
 
-  // The intro is a flex sibling above virtualized timeline rows. Their
-  // translateY positions intentionally vary with the current scroll window;
-  // the contract here is reading order, not a fixed pixel gap.
-  expect(gapAboveDivider).toBeGreaterThanOrEqual(0);
-  expect(gapBelowDivider).toBeGreaterThanOrEqual(0);
+    // Virtualizer transforms move rendered rows in viewport space. The stable
+    // contract is the timeline's semantic reading order: intro, day divider,
+    // then the first message.
+    return (
+      timeline.contains(intro) &&
+      timeline.contains(divider) &&
+      timeline.contains(message) &&
+      follows(intro, divider) &&
+      follows(divider, message)
+    );
+  }, introTestId);
+
+  expect(isOrdered).toBe(true);
 }
 
 async function expectIntroActionCardLayout(
@@ -1140,9 +1148,10 @@ test("drops an expanded DM after agent startup fails", async ({ page }) => {
   await page.keyboard.type(" before startup fails");
   await page.getByTestId("send-message").click();
 
-  await expect(
-    page.getByText(startError, { exact: false }).first(),
-  ).toBeVisible();
+  const startupFailureToast = page
+    .locator("[data-sonner-toast][data-removed='false']")
+    .filter({ hasText: startError });
+  await expect(startupFailureToast).toBeVisible();
   await expect(input).toContainText("Fizz");
 
   const commandsAfterFailure = await readCommandPayloadLog(page);
@@ -1158,6 +1167,25 @@ test("drops an expanded DM after agent startup fails", async ({ page }) => {
     (openDmCallsAfterFailure.at(-1)?.payload as { pubkeys?: string[] })
       ?.pubkeys,
   ).toHaveLength(2);
+
+  const startupFailureToastBox = await startupFailureToast.boundingBox();
+  if (!startupFailureToastBox) {
+    throw new Error("Could not dismiss the agent startup failure toast");
+  }
+  // Sonner toasts are deliberately dismissible and occupy the composer area.
+  // Dismiss the verified failure before retrying the send it was obscuring.
+  await page.mouse.move(
+    startupFailureToastBox.x + startupFailureToastBox.width / 2,
+    startupFailureToastBox.y + startupFailureToastBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    startupFailureToastBox.x - startupFailureToastBox.width,
+    startupFailureToastBox.y + startupFailureToastBox.height / 2,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+  await expect(startupFailureToast).toHaveCount(0);
 
   await input.fill(retryMessage);
   const retryBaseline = commandsAfterFailure.length;
@@ -1577,7 +1605,10 @@ test("ephemeral countdown refreshes when switching channels after a clock jump",
       .getByTestId("create-channel-description")
       .fill("Auto-cleaned test stream");
     await page.getByTestId("create-channel-channel-type").click();
-    await page.getByLabel("Temporary channel").click();
+    // The fixed clock intentionally prevents Radix's entry transition from
+    // advancing. The visible radio item is already resolved, so select it
+    // without waiting for an animation frame that cannot occur in this test.
+    await page.getByLabel("Temporary channel").click({ force: true });
     await page.getByTestId("create-channel-submit").click();
     await expect(page.getByTestId("chat-title")).toContainText(channelName);
   }
@@ -2426,7 +2457,7 @@ test("sidebar clears unread indicator after opening a DM", async ({ page }) => {
     "Unread update for the DM",
   );
   await expectSameLeftInset(page, "message-dm-intro", "message-row");
-  await expectIntroSpacedAboveDayDivider(page, "message-dm-intro");
+  await expectIntroPrecedesDayDividerAndMessage(page, "message-dm-intro");
   await expect(page.getByTestId("channel-unread-alice-tyler")).toHaveCount(0);
 });
 
@@ -3440,6 +3471,9 @@ test("members sidebar virtualizes large channel rosters", async ({ page }) => {
     element.scrollTop = element.scrollHeight;
     element.dispatchEvent(new Event("scroll"));
   });
+  // The virtualizer applies its visible range on the next frame after a
+  // programmatic scroll; wait for that range update before querying its tail.
+  await page.waitForTimeout(100);
   await expect(
     memberList.getByTestId(`sidebar-member-${pubkeys.at(-1)}`),
   ).toBeVisible();
