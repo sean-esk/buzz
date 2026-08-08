@@ -111,11 +111,13 @@ export function useNewMessageRecipients({
       : null;
     const eligibleAgentPubkeys = getMentionableAgentPubkeys({
       currentPubkey,
-      eligibilityScope: { type: "community" },
+      eligibilityScope: { type: "direct-message" },
       managedAgentPubkeys: (managedAgentsQuery.data ?? []).map(
         (agent) => agent.pubkey,
       ),
       relayAgents: relayAgentsQuery.data,
+      relayDirectorySettled:
+        relayAgentsQuery.data !== undefined && relayAgentsQuery.error === null,
       sharedChannelIds: getSharedChannelIds(channelsQuery.data),
     });
 
@@ -223,6 +225,7 @@ export function useNewMessageRecipients({
     isArchivedDiscovery,
     managedAgentsQuery.data,
     relayAgentsQuery.data,
+    relayAgentsQuery.error,
     selectedPubkeys,
     userSearchResults,
   ]);

@@ -151,6 +151,8 @@ function useAgentCandidates() {
       eligibilityScope: { type: "community" },
       managedAgentPubkeys: managedByPubkey.keys(),
       relayAgents,
+      relayDirectorySettled:
+        relayAgentsQuery.data !== undefined && relayAgentsQuery.error === null,
       sharedChannelIds: getSharedChannelIds(channelsQuery.data),
     });
 
@@ -181,6 +183,7 @@ function useAgentCandidates() {
     identityQuery.data?.pubkey,
     managedAgentsQuery.data,
     relayAgentsQuery.data,
+    relayAgentsQuery.error,
   ]);
 }
 

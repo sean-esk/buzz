@@ -286,6 +286,8 @@ export function MembersSidebar({
       eligibilityScope: { type: "community" },
       managedAgentPubkeys: managedAgentsByPubkey.keys(),
       relayAgents: relayAgentsQuery.data,
+      relayDirectorySettled:
+        relayAgentsQuery.data !== undefined && relayAgentsQuery.error === null,
       sharedChannelIds,
     });
 
@@ -380,6 +382,7 @@ export function MembersSidebar({
     memberPubkeys,
     normalizedDeferredSearchQuery,
     relayAgentsQuery.data,
+    relayAgentsQuery.error,
     userSearchResults,
   ]);
   const isAddSearchLoading =

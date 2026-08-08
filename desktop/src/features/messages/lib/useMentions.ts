@@ -17,8 +17,8 @@ import {
   filterCachedAgentSuggestions,
   getMentionableAgentPubkeys,
   getSharedChannelIds,
-  isAgentIdentityInAllowedList,
   isAgentMentionChannelType,
+  relayAgentDirectoryByPubkey,
   shouldHideAgentFromMentions,
   uniqueAutocompleteLabels,
 } from "@/features/agents/lib/agentAutocompleteEligibility";
@@ -118,6 +118,8 @@ export function useMentions(
     relayAgentsQuery.data !== undefined ||
     !relayAgentsQuery.isLoading ||
     relayAgentsQuery.error !== null;
+  const relayDirectorySettled =
+    relayAgentsQuery.data !== undefined && relayAgentsQuery.error === null;
   const canSearchGlobalUsers =
     canSearchGlobalPeople &&
     managedAgentDirectoryReady &&
@@ -171,14 +173,8 @@ export function useMentions(
       ),
     [managedAgentsQuery.data],
   );
-  const relayAgentNamesByPubkey = React.useMemo(
-    () =>
-      new Map(
-        (relayAgentsQuery.data ?? []).map((agent) => [
-          normalizePubkey(agent.pubkey),
-          agent.name,
-        ]),
-      ),
+  const relayAgentDirectory = React.useMemo(
+    () => relayAgentDirectoryByPubkey(relayAgentsQuery.data),
     [relayAgentsQuery.data],
   );
   const directoryAgentPubkeys = React.useMemo(
@@ -206,6 +202,7 @@ export function useMentions(
           : { type: "managed-only" },
         managedAgentPubkeys,
         relayAgents: relayAgentsQuery.data,
+        relayDirectorySettled,
         sharedChannelIds,
       }),
     [
@@ -213,6 +210,7 @@ export function useMentions(
       managedAgentPubkeys,
       mentionChannelId,
       relayAgentsQuery.data,
+      relayDirectorySettled,
       sharedChannelIds,
     ],
   );
@@ -255,9 +253,6 @@ export function useMentions(
       if (isArchivedDiscovery(pubkey)) {
         return;
       }
-      if (!isAgentIdentityInAllowedList(candidate, mentionableAgentPubkeys)) {
-        return;
-      }
       if (
         shouldHideAgentFromMentions({
           isAgent: candidate.isAgent === true,
@@ -265,6 +260,7 @@ export function useMentions(
           pubkey,
           mentionableAgentPubkeys,
           directoryAgentPubkeys,
+          relayDirectorySettled,
         })
       ) {
         return;
@@ -308,7 +304,7 @@ export function useMentions(
         : undefined;
       const agentName =
         managedAgentNamesByPubkey.get(pubkey) ??
-        relayAgentNamesByPubkey.get(pubkey) ??
+        relayAgentDirectory.get(pubkey)?.name ??
         null;
       const profile = profiles?.[pubkey] ?? null;
       addCandidate({
@@ -329,8 +325,11 @@ export function useMentions(
           profile?.isAgent === true ||
           member.role === "bot" ||
           managedAgentNamesByPubkey.has(pubkey) ||
-          relayAgentNamesByPubkey.has(pubkey),
-        ownerPubkey: profile?.ownerPubkey ?? null,
+          relayAgentDirectory.has(pubkey),
+        ownerPubkey:
+          profile?.ownerPubkey ??
+          relayAgentDirectory.get(pubkey)?.ownerPubkey ??
+          null,
         personaName: personaNameByPubkey.get(pubkey) ?? null,
         role: member.role,
         secondaryLabel:
@@ -350,7 +349,7 @@ export function useMentions(
         personaId:
           managedAgentPersonaIdsByPubkey.get(pubkey) ??
           (activePersonaById.has(pubkey) ? pubkey : undefined),
-        ownerPubkey: null,
+        ownerPubkey: agent.ownerPubkey,
         isAgent: true,
       });
     }
@@ -385,7 +384,7 @@ export function useMentions(
           isAgent:
             user.isAgent ||
             managedAgentNamesByPubkey.has(pubkey) ||
-            relayAgentNamesByPubkey.has(pubkey),
+            relayAgentDirectory.has(pubkey),
           personaName: personaNameByPubkey.get(pubkey) ?? null,
           secondaryLabel: formatSearchUserSecondaryLabel(user),
           ownerPubkey: user.ownerPubkey ?? null,
@@ -435,7 +434,8 @@ export function useMentions(
     mentionableAgentPubkeys,
     personaNameByPubkey,
     profiles,
-    relayAgentNamesByPubkey,
+    relayAgentDirectory,
+    relayDirectorySettled,
     relayAgentsQuery.data,
   ]);
 

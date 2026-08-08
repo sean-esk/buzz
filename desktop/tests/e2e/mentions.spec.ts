@@ -68,11 +68,10 @@ async function readCommandPayloadLog(page: import("@playwright/test").Page) {
   });
 }
 
-async function readOutgoingMentionPubkeys(
+async function readLatestOutgoingMentionPubkeys(
   page: import("@playwright/test").Page,
-  content: string,
 ) {
-  return page.evaluate((expectedContent) => {
+  return page.evaluate(() => {
     const entries =
       (
         window as Window & {
@@ -83,7 +82,7 @@ async function readOutgoingMentionPubkeys(
         }
       ).__BUZZ_E2E_COMMAND_LOG__ ?? [];
 
-    for (const entry of entries) {
+    for (const entry of entries.toReversed()) {
       if (entry.command !== "plugin:websocket|send") continue;
       const data = (
         entry.payload as { message?: { data?: string } } | undefined
@@ -91,13 +90,8 @@ async function readOutgoingMentionPubkeys(
       if (!data) continue;
 
       try {
-        const frame = JSON.parse(data) as [
-          string,
-          { content?: string; tags?: string[][] },
-        ];
-        if (frame[0] !== "EVENT" || frame[1]?.content !== expectedContent) {
-          continue;
-        }
+        const frame = JSON.parse(data) as [string, { tags?: string[][] }];
+        if (frame[0] !== "EVENT") continue;
         return (frame[1].tags ?? [])
           .filter((tag) => tag[0] === "p" && tag[1])
           .map((tag) => tag[1]);
@@ -105,7 +99,7 @@ async function readOutgoingMentionPubkeys(
     }
 
     return null;
-  }, content);
+  });
 }
 
 function commandCount(commands: string[], command: string) {
@@ -298,15 +292,43 @@ test("relay-only shared agents emit an outbound mention tag when selected", asyn
   const aliceRow = autocomplete(page).locator("button", { hasText: "alice" });
   await expect(aliceRow).toBeVisible();
   await aliceRow.click();
-  await page.keyboard.type("please reply");
+  await page.keyboard.type(" please reply");
 
   const content = "Ask @alice please reply";
   await expect(input).toHaveText(content);
   await page.getByTestId("send-message").click();
 
   await expect
-    .poll(() => readOutgoingMentionPubkeys(page, content))
+    .poll(() => readLatestOutgoingMentionPubkeys(page))
     .toContain(TEST_IDENTITIES.alice.pubkey);
+});
+
+test("a verified other-owner bot member is selectable and emits its exact tag", async ({
+  page,
+}) => {
+  const neoPubkey = "5a".repeat(32);
+  await installMockBridge(page, {
+    relayAgents: [
+      {
+        pubkey: neoPubkey,
+        name: "Neo",
+        ownerPubkey: TEST_IDENTITIES.alice.pubkey,
+        respondTo: "anyone",
+        directoryState: "resolved",
+        botChannelNames: ["general"],
+      },
+    ],
+  });
+  await page.goto("/");
+  await page.getByTestId("channel-general").click();
+  const input = page.getByTestId("message-input");
+  await input.fill("@Neo");
+  await autocomplete(page).getByText("Neo").click();
+  await page.keyboard.type(" help");
+  await page.getByTestId("send-message").click();
+  await expect
+    .poll(() => readLatestOutgoingMentionPubkeys(page))
+    .toContain(neoPubkey);
 });
 
 test("thread autocomplete keeps multiple long names readable in a narrow panel", async ({
