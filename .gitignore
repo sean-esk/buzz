@@ -31,6 +31,10 @@ Thumbs.db
 # Scratch / working files (AI reviews, notes, drafts)
 .scratch/
 
+# Archon runtime artifacts and repo-scoped secrets
+.archon/state/
+.archon/.env
+
 # Playwright artifacts
 playwright-report/
 test-results/

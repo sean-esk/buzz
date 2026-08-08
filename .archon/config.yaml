@@ -1,0 +1,29 @@
+assistant: codex
+
+assistants:
+  codex:
+    model: gpt-5.6-sol
+    modelReasoningEffort: high
+    webSearchMode: disabled
+    codexBinaryPath: /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex
+
+tiers:
+  small:
+    provider: codex
+    model: gpt-5.6-terra
+    effort: medium
+  medium:
+    provider: codex
+    model: gpt-5.6-terra
+    effort: medium
+  large:
+    provider: codex
+    model: gpt-5.6-sol
+    effort: high
+
+worktree:
+  baseBranch: main
+
+defaults:
+  loadDefaultCommands: true
+  loadDefaultWorkflows: true
