@@ -964,7 +964,6 @@ pub fn resolve_mint_behavioral_defaults(
             "respond-to mode 'allowlist' requires at least one pubkey in the allowlist".to_string(),
         );
     }
-
     let parallelism = match input_parallelism {
         // Explicit input is validated here too (not just at the command
         // call sites) so the "validated when present" contract on
@@ -992,11 +991,9 @@ pub fn resolve_mint_behavioral_defaults(
         parallelism,
     })
 }
-
 mod catalog_source;
 pub use catalog_source::CatalogSource;
 mod requests;
 pub use requests::*;
-
 #[cfg(test)]
 mod tests;

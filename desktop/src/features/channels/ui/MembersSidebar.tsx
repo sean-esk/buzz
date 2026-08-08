@@ -748,13 +748,11 @@ export function MembersSidebar({
                 {PRIVATE_CHANNEL_ADD_DENIED_MESSAGE}
               </p>
             ) : null}
-            {relayAgentsQuery.error instanceof Error ? (
-              <RelayDirectoryErrorNotice
-                message={relayAgentsQuery.error.message}
-                onRetry={() => void relayAgentsQuery.refetch()}
-                testId="members-sidebar-directory-error"
-              />
-            ) : null}
+            <RelayDirectoryErrorNotice
+              error={relayAgentsQuery.error}
+              onRetry={relayAgentsQuery.refetch}
+              testId="members-sidebar-directory-error"
+            />
           </DialogHeader>
 
           <div className="max-h-[calc(100vh-12rem)] overflow-y-auto pb-6">

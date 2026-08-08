@@ -1085,7 +1085,7 @@ for (const directoryState of ["incomplete", "untrusted"] as const) {
           name: "quinn",
           respondTo: "anyone",
           directoryState,
-          channelNames: ["general"],
+          botChannelIds: [GENERAL_CHANNEL_ID],
         },
       ],
     });
@@ -1099,6 +1099,16 @@ for (const directoryState of ["incomplete", "untrusted"] as const) {
 test("settled directory absence permits an in-channel bot mention", async ({
   page,
 }) => {
+  await installMockBridge(page, {
+    relayAgents: [
+      {
+        pubkey: TEST_IDENTITIES.alice.pubkey,
+        name: "alice",
+        directoryState: "absent",
+        botChannelIds: [GENERAL_CHANNEL_ID],
+      },
+    ],
+  });
   await page.goto("/");
   await page.getByTestId("channel-general").click();
   await page.getByTestId("message-input").fill("@alice");

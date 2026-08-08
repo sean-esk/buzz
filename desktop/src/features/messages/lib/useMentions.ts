@@ -247,7 +247,6 @@ export function useMentions(
   );
   const mentionCandidates = React.useMemo<MentionCandidate[]>(() => {
     const candidatesByPubkey = new Map<string, MentionCandidate>();
-
     const addCandidate = (candidate: MentionCandidate & { pubkey: string }) => {
       const pubkey = normalizePubkey(candidate.pubkey);
       if (isArchivedDiscovery(pubkey)) {
@@ -270,7 +269,6 @@ export function useMentions(
         candidatesByPubkey.set(pubkey, { ...candidate, pubkey });
         return;
       }
-
       candidatesByPubkey.set(pubkey, {
         ...current,
         avatarUrl: current.avatarUrl ?? candidate.avatarUrl ?? null,
@@ -998,5 +996,4 @@ export function useMentions(
     updateMentionQuery,
   };
 }
-
 export type UseMentionsResult = ReturnType<typeof useMentions>;

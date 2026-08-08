@@ -1,18 +1,19 @@
 type RelayDirectoryErrorNoticeProps = {
-  message: string;
+  error: unknown;
   onRetry: () => void;
   testId: string;
 };
 
 /** Contextual recovery affordance for fail-closed shared-agent discovery. */
 export function RelayDirectoryErrorNotice({
-  message,
+  error,
   onRetry,
   testId,
 }: RelayDirectoryErrorNoticeProps) {
+  if (!(error instanceof Error)) return null;
   return (
     <p className="pt-2 text-sm text-destructive" data-testid={testId}>
-      Agent directory unavailable: {message}{" "}
+      Agent directory unavailable: {error.message}{" "}
       <button className="underline" onClick={onRetry} type="button">
         Retry
       </button>

@@ -186,6 +186,7 @@ test("getMentionableAgentPubkeys: keeps managed agents and shared relay agents",
         channelIds: ["other"],
       },
     ],
+    relayDirectorySettled: true,
     sharedChannelIds: new Set(["general"]),
   });
 
@@ -205,6 +206,7 @@ test("getMentionableAgentPubkeys: scopes channel composers and fails closed with
     currentPubkey: CURRENT_PUBKEY,
     managedAgentPubkeys: [PUB_A],
     relayAgents,
+    relayDirectorySettled: true,
     sharedChannelIds: new Set(["general"]),
   };
 
@@ -345,6 +347,7 @@ test("shouldHideAgentFromMentions: shows member agents with unknown invocability
       pubkey: PUB_A,
       mentionableAgentPubkeys: new Set(),
       directoryAgentPubkeys: new Set(),
+      relayDirectorySettled: true,
     }),
     false,
   );
@@ -361,6 +364,7 @@ test("shouldHideAgentFromMentions: normalizes the pubkey before lookup", () => {
       pubkey: mixedCase,
       mentionableAgentPubkeys: new Set(),
       directoryAgentPubkeys: new Set([normalized]),
+      relayDirectorySettled: true,
     }),
     true,
   );
@@ -434,6 +438,19 @@ test("omitted relay-directory settlement fails closed", () => {
       sharedChannelIds: new Set(["general"]),
     }),
     new Set(),
+  );
+});
+
+test("omitted relay-directory settlement hides member agents", () => {
+  assert.equal(
+    shouldHideAgentFromMentions({
+      isAgent: true,
+      isMember: true,
+      pubkey: PUB_A,
+      mentionableAgentPubkeys: new Set(),
+      directoryAgentPubkeys: new Set(),
+    }),
+    true,
   );
 });
 
