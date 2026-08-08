@@ -22,8 +22,8 @@ pub struct AgentDefinition {
     pub system_prompt: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime: Option<String>,
-    /// provider (e.g., 'goose-claude-4-6-opus' for Databricks, 'claude-opus-4-7' for Anthropic
-    /// direct). Buzz stores and passes through without interpretation.
+    /// Opaque, harness-specific model identifier string. Format depends on the runtime and its
+    /// LLM provider. Buzz stores and passes it through without interpretation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     /// LLM inference provider (e.g., 'databricks', 'anthropic', 'openai'). Optional — when set,
@@ -206,8 +206,10 @@ pub struct RelayAgentInfo {
     pub respond_to: Option<DirectoryRespondTo>,
     #[serde(default)]
     pub respond_to_allowlist: Vec<String>,
+    /// Author of the selected kind:30177 directory event.
     #[serde(default)]
     pub owner_pubkey: Option<String>,
+    /// Trust state; only `Resolved` entries may be considered invocable.
     #[serde(default)]
     pub directory_state: DirectoryState,
 }
@@ -220,6 +222,7 @@ pub struct ManagedAgentRecord {
     pub persona_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub team_id: Option<String>,
+    /// nsec private key. Held in memory but persisted to the OS keyring (keyed
     /// by `pubkey`) rather than serialized to `managed-agents.json`. The
     /// storage layer blanks this before writing JSON once the key is safely in
     /// the keyring, and re-hydrates it from the keyring on load.
@@ -230,6 +233,7 @@ pub struct ManagedAgentRecord {
     /// store whose inline key was already migrated out and blanked.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub private_key_nsec: String,
+    /// NIP-OA auth tag JSON. Computed at agent creation time.
     ///
     /// Pre-existing agents created before NIP-OA will have `None` here.
     /// This is intentional — they continue to work without attestation.

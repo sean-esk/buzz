@@ -68,10 +68,11 @@ async function readCommandPayloadLog(page: import("@playwright/test").Page) {
   });
 }
 
-async function readLatestOutgoingMentionPubkeys(
+async function readOutgoingMentionPubkeys(
   page: import("@playwright/test").Page,
+  expectedContent: string,
 ) {
-  return page.evaluate(() => {
+  return page.evaluate((content) => {
     const entries =
       (
         window as Window & {
@@ -90,16 +91,27 @@ async function readLatestOutgoingMentionPubkeys(
       if (!data) continue;
 
       try {
-        const frame = JSON.parse(data) as [string, { tags?: string[][] }];
-        if (frame[0] !== "EVENT") continue;
+        const frame = JSON.parse(data) as [
+          string,
+          { content?: string; tags?: string[][] },
+        ];
+        if (frame[0] !== "EVENT" || frame[1]?.content !== content) {
+          continue;
+        }
         return (frame[1].tags ?? [])
           .filter((tag) => tag[0] === "p" && tag[1])
           .map((tag) => tag[1]);
-      } catch {}
+      } catch (error) {
+        if (data.includes(content)) {
+          throw new Error(
+            `Malformed outbound EVENT for ${JSON.stringify(content)}: ${String(error)}`,
+          );
+        }
+      }
     }
 
     return null;
-  });
+  }, expectedContent);
 }
 
 function commandCount(commands: string[], command: string) {
@@ -294,13 +306,13 @@ test("relay-only shared agents emit an outbound mention tag when selected", asyn
   await aliceRow.click();
   await page.keyboard.type(" please reply");
 
-  const content = "Ask @alice please reply";
+  const content = "Ask @alice  please reply";
   await expect(input).toHaveText(content);
   await page.getByTestId("send-message").click();
 
   await expect
-    .poll(() => readLatestOutgoingMentionPubkeys(page))
-    .toContain(TEST_IDENTITIES.alice.pubkey);
+    .poll(() => readOutgoingMentionPubkeys(page, content))
+    .toEqual([TEST_IDENTITIES.alice.pubkey]);
 });
 
 test("a verified other-owner bot member is selectable and emits its exact tag", async ({
@@ -327,8 +339,8 @@ test("a verified other-owner bot member is selectable and emits its exact tag", 
   await page.keyboard.type(" help");
   await page.getByTestId("send-message").click();
   await expect
-    .poll(() => readLatestOutgoingMentionPubkeys(page))
-    .toContain(neoPubkey);
+    .poll(() => readOutgoingMentionPubkeys(page, "@Neo  help"))
+    .toEqual([neoPubkey]);
 });
 
 test("thread autocomplete keeps multiple long names readable in a narrow panel", async ({

@@ -148,7 +148,7 @@ function useAgentCandidates() {
     );
     const mentionable = getMentionableAgentPubkeys({
       currentPubkey: identityQuery.data?.pubkey,
-      eligibilityScope: { type: "community" },
+      eligibilityScope: { type: "direct-message" },
       managedAgentPubkeys: managedByPubkey.keys(),
       relayAgents,
       relayDirectorySettled:

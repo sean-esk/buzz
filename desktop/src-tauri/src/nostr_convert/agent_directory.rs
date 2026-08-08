@@ -52,9 +52,9 @@ fn newest_by_key<'a>(events: impl IntoIterator<Item = &'a Event>) -> Vec<&'a Eve
     let mut heads: BTreeMap<String, &'a Event> = BTreeMap::new();
     for event in events {
         let key = event.pubkey.to_hex();
-        let take = heads.get(&key).is_none_or(|current| {
-            (event.created_at, event.id.to_hex()) > (current.created_at, current.id.to_hex())
-        });
+        let take = heads
+            .get(&key)
+            .is_none_or(|current| is_newer_head(event, current));
         if take {
             heads.insert(key, event);
         }
@@ -62,8 +62,18 @@ fn newest_by_key<'a>(events: impl IntoIterator<Item = &'a Event>) -> Vec<&'a Eve
     heads.into_values().collect()
 }
 
+/// NIP-33 selects the latest timestamp and, for equal timestamps, the lowest
+/// event ID as the coordinate's head.
+fn is_newer_head(candidate: &Event, current: &Event) -> bool {
+    candidate.created_at > current.created_at
+        || (candidate.created_at == current.created_at && candidate.id < current.id)
+}
+
 fn current_candidates(events: &[Event]) -> Vec<Candidate<'_>> {
-    let mut by_agent: BTreeMap<String, Candidate<'_>> = BTreeMap::new();
+    // A kind:30177 coordinate is (directory author, kind, agent d-tag). Keep
+    // each owner's independent head until NIP-OA verification chooses the
+    // owner-backed coordinate for an agent.
+    let mut heads: BTreeMap<(String, String), Candidate<'_>> = BTreeMap::new();
     for event in events {
         let Some(d_tag) = exactly_one_tag_value(event, "d") else {
             continue;
@@ -76,15 +86,48 @@ fn current_candidates(events: &[Event]) -> Vec<Candidate<'_>> {
             event,
             agent_pubkey: agent_pubkey.clone(),
         };
-        let take = by_agent.get(&agent_pubkey).is_none_or(|current| {
-            (candidate.event.created_at, candidate.event.id.to_hex())
-                > (current.event.created_at, current.event.id.to_hex())
-        });
+        let key = (event.pubkey.to_hex(), agent_pubkey);
+        let take = heads
+            .get(&key)
+            .is_none_or(|current| is_newer_head(candidate.event, current.event));
         if take {
-            by_agent.insert(agent_pubkey, candidate);
+            heads.insert(key, candidate);
         }
     }
-    by_agent.into_values().collect()
+    heads.into_values().collect()
+}
+
+fn selected_candidates<'a>(
+    candidates: Vec<Candidate<'a>>,
+    profiles: &HashMap<String, &'a Event>,
+) -> Vec<Candidate<'a>> {
+    let mut by_agent: BTreeMap<String, Vec<Candidate<'a>>> = BTreeMap::new();
+    for candidate in candidates {
+        by_agent
+            .entry(candidate.agent_pubkey.clone())
+            .or_default()
+            .push(candidate);
+    }
+
+    by_agent
+        .into_values()
+        .filter_map(|candidates| {
+            let profile_owner = profiles
+                .get(&candidates[0].agent_pubkey)
+                .and_then(|profile| profile_valid_oa_owner_pubkey(profile));
+            let matching_index = profile_owner.as_deref().and_then(|owner| {
+                candidates
+                    .iter()
+                    .position(|candidate| candidate.event.pubkey.to_hex() == owner)
+            });
+            // BTreeMap ordering supplies a stable untrusted representative when
+            // no directory author matches the verified profile owner.
+            match matching_index {
+                Some(index) => candidates.into_iter().nth(index),
+                None => candidates.into_iter().next(),
+            }
+        })
+        .collect()
 }
 
 fn content_state(
@@ -138,7 +181,7 @@ pub(crate) fn project_relay_agents(
         .into_iter()
         .map(|event| (event.pubkey.to_hex(), event))
         .collect();
-    let candidates = current_candidates(agent_events);
+    let candidates = selected_candidates(current_candidates(agent_events), &profiles);
     let candidate_pubkeys: BTreeSet<String> = candidates
         .iter()
         .map(|candidate| candidate.agent_pubkey.clone())
@@ -229,6 +272,8 @@ pub(crate) fn candidate_pubkeys(events: &[Event]) -> Vec<String> {
     current_candidates(events)
         .into_iter()
         .map(|candidate| candidate.agent_pubkey)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
         .collect()
 }
 
@@ -260,6 +305,20 @@ mod tests {
                 ]))
                 .collect(),
         )
+    }
+
+    fn config_at(owner: &Keys, agent: &Keys, policy: &str, created_at: u64) -> Event {
+        EventBuilder::new(
+            Kind::from_u16(30177),
+            serde_json::json!({"name":"Neo", "respond_to": policy}).to_string(),
+        )
+        .tag(
+            Tag::parse(vec!["d".to_string(), agent.public_key().to_hex()])
+                .expect("test tag parses"),
+        )
+        .custom_created_at(nostr::Timestamp::from(created_at))
+        .sign_with_keys(owner)
+        .expect("test event signs")
     }
 
     fn verified_profile(owner: &Keys, agent: &Keys) -> Event {
@@ -310,6 +369,51 @@ mod tests {
         assert_eq!(agents.len(), 1);
         assert_eq!(agents[0].directory_state, DirectoryState::Untrusted);
         assert_eq!(agents[0].respond_to, None);
+    }
+
+    #[test]
+    fn verified_incomplete_and_wrong_owner_states_remain_distinct() {
+        let owner = Keys::generate();
+        let foreign_owner = Keys::generate();
+        let agent = Keys::generate();
+        let profile = verified_profile(&owner, &agent);
+
+        let incomplete = config(&owner, &agent, "mystery", Vec::new());
+        let agents = project_relay_agents(&[incomplete], &[profile.clone()], &[], &[]);
+        assert_eq!(agents[0].directory_state, DirectoryState::Incomplete);
+
+        let foreign = config(&foreign_owner, &agent, "anyone", Vec::new());
+        let agents = project_relay_agents(&[foreign], &[profile], &[], &[]);
+        assert_eq!(agents[0].directory_state, DirectoryState::Untrusted);
+    }
+
+    #[test]
+    fn newest_directory_heads_are_per_owner_and_order_independent() {
+        let owner = Keys::generate();
+        let foreign_owner = Keys::generate();
+        let agent = Keys::generate();
+        let profile = verified_profile(&owner, &agent);
+        let first = config_at(&owner, &agent, "anyone", 1_000);
+        let second = config_at(&owner, &agent, "nobody", 1_000);
+        let foreign = config_at(&foreign_owner, &agent, "nobody", 2_000);
+        let expected = if first.id < second.id {
+            DirectoryRespondTo::Anyone
+        } else {
+            DirectoryRespondTo::Nobody
+        };
+        assert_eq!(
+            candidate_pubkeys(&[foreign.clone(), second.clone(), first.clone()]),
+            vec![agent.public_key().to_hex()]
+        );
+
+        let agents = project_relay_agents(&[foreign, second, first], &[profile], &[], &[]);
+        assert_eq!(agents.len(), 1);
+        assert_eq!(
+            agents[0].owner_pubkey.as_deref(),
+            Some(owner.public_key().to_hex().as_str())
+        );
+        assert_eq!(agents[0].directory_state, DirectoryState::Resolved);
+        assert_eq!(agents[0].respond_to, Some(expected));
     }
 
     #[test]
