@@ -1,5 +1,14 @@
 assistant: codex
 
+envVars:
+  # Archon's legacy OAuth variables are interpreted as agent-identity auth by
+  # current Codex. Empty project overrides preserve the authenticated ~/.codex
+  # ChatGPT session for workflow nodes without deleting global credentials.
+  CODEX_ID_TOKEN: ""
+  CODEX_ACCESS_TOKEN: ""
+  CODEX_REFRESH_TOKEN: ""
+  CODEX_ACCOUNT_ID: ""
+
 assistants:
   codex:
     model: gpt-5.6-sol
