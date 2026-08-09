@@ -714,18 +714,15 @@ export function AgentInstanceEditDialog({
           ? undefined
           : submitEnvVars,
         respondTo: respondTo !== agent.respondTo ? respondTo : undefined,
-        // The allowlist is preserved across mode toggles in local UI state
-        // (so a user can flip away from allowlist and back without losing
-        // their entries), but we only send it on the wire when (a) it
-        // actually changed, AND (b) the saved mode will need it. Sending
-        // an allowlist while switching to a non-allowlist mode would be
-        // harmless server-side, but it's noise in the persisted record.
+        // Preserve local allowlist edits, but submit them only when needed.
         respondToAllowlist:
           respondTo === "allowlist" &&
           respondToAllowlist.join(",") !== agent.respondToAllowlist.join(",")
             ? respondToAllowlist
             : undefined,
       };
+      const accessChanged =
+        input.respondTo !== undefined || input.respondToAllowlist !== undefined;
 
       const result = await updateMutation.mutateAsync(input);
       if (autoRestartOnConfigChange !== agent.autoRestartOnConfigChange) {
@@ -739,10 +736,13 @@ export function AgentInstanceEditDialog({
       showAgentProfileSyncWarning(result.agent.name, result.profileSyncError);
       handleOpenChange(false);
       onUpdated?.(result.agent);
-      // The auto-restart policy deliberately never fires for a stopped or
-      // failing agent (a broken agent must not auto-loop), so an edit meant
-      // to FIX one silently waits for a manual start. Offer that start
-      // explicitly instead of relying on the user to know the policy.
+      if (accessChanged && isManagedAgentActive(result.agent))
+        toast(
+          autoRestartOnConfigChange
+            ? "Access saved. Buzz will restart this agent after it is connected and idle for about three minutes."
+            : "Access saved. Use Restart Agent on the profile to apply it.",
+        );
+      // Stopped and failing agents need an explicit recovery path.
       if (!isManagedAgentActive(result.agent)) {
         const startedName = result.agent.name;
         toast(`${startedName} saved while stopped.`, {

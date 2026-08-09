@@ -352,24 +352,22 @@ test.describe("edit agent dialog", () => {
     ).toBeVisible();
   });
 
-  test("profile Edit routes persona-linked agents to the definition editor", async ({
+  test("profile Edit routes persona-linked agents to the live instance editor", async ({
     page,
   }) => {
-    // Routing pin for handleEditAgent (UserProfilePanel): when the agent has
-    // a resolvable non-built-in persona, the Edit quick action opens the
-    // DEFINITION editor (persona dialog), not EditAgentDialog. The instance
-    // editor (and its inherit-runtime toggle) is reachable for persona-linked
-    // agents only via the requestOpenEditAgent event (ConfigNudgeCard) — no
-    // plain UI path — so its inherit-toggle behavior is covered by B3b's
-    // component-level pinning test, not e2e.
+    // The live instance is authoritative for access, even when it inherits
+    // its configuration from a linked definition. This fixture deliberately
+    // disagrees so the profile action cannot accidentally seed from persona
+    // defaults again.
     await installMockBridge(page, {
       managedAgents: [
         {
           pubkey: AGENT_PUBKEY,
           name: AGENT_NAME,
           personaId: PERSONA_ID,
-          status: "stopped",
+          status: "running",
           channelNames: ["agents"],
+          respondTo: "owner-only",
         },
       ],
       personas: [
@@ -377,6 +375,7 @@ test.describe("edit agent dialog", () => {
           id: PERSONA_ID,
           displayName: "Edit E2E Persona",
           systemPrompt: "You are the edit-agent e2e persona.",
+          behavior: { respondTo: "anyone", respondToAllowlist: [] },
         },
       ],
     });
@@ -396,14 +395,53 @@ test.describe("edit agent dialog", () => {
     });
     await page.getByTestId("user-profile-edit-agent").click();
 
-    // Definition editor opens; the instance editor does not.
-    await expect(page.getByTestId("persona-dialog")).toBeVisible({
+    await expect(page.getByTestId("edit-agent-dialog")).toBeVisible({
       timeout: 10_000,
     });
-    await expect(page.getByTestId("edit-agent-dialog")).not.toBeVisible();
-    // And it is the persona's record that's being edited.
-    await expect(page.locator("#persona-display-name")).toHaveValue(
-      "Edit E2E Persona",
+    await expect(page.getByTestId("persona-dialog")).not.toBeVisible();
+    await expect(page.locator("#agent-respond-to")).toHaveText(
+      "Only me (default)",
     );
+    await expect(page.getByTestId("agent-access-warning")).not.toBeVisible();
+
+    const commandLogStart = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__?.length ?? 0,
+    );
+    await pickDropdownOption(page, "agent-respond-to", "Anyone");
+    await page.getByTestId("edit-agent-dialog-submit").click();
+    await expect(
+      page.getByText(
+        "Access saved. Buzz will restart this agent after it is connected and idle for about three minutes.",
+      ),
+    ).toBeVisible();
+    await expect
+      .poll(async () =>
+        page.evaluate((start) => {
+          const commands = window.__BUZZ_E2E_COMMAND_LOG__ ?? [];
+          return commands
+            .slice(start)
+            .some(
+              (entry) =>
+                entry.command === "update_managed_agent" &&
+                (entry.payload as { input?: { respondTo?: string } })?.input
+                  ?.respondTo === "anyone",
+            );
+        }, commandLogStart),
+      )
+      .toBe(true);
+    const commands = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__ ?? [],
+    );
+    expect(
+      commands
+        .slice(commandLogStart)
+        .some((entry) => entry.command === "update_persona"),
+    ).toBe(false);
+    await expect(page.getByTestId("restart-diff-badge")).toBeVisible();
+
+    await page.getByTestId("user-profile-agent-restart").click();
+    await expect(page.getByTestId("restart-diff-badge")).not.toBeVisible();
+    await page.getByTestId("user-profile-edit-agent").click();
+    await expect(page.locator("#agent-respond-to")).toHaveText("Anyone");
   });
 });

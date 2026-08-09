@@ -1007,6 +1007,7 @@ test("relay-only shared agents appear in forum mentions", async ({ page }) => {
         respondTo: "allowlist",
         respondToAllowlist: [MOCK_VIEWER_PUBKEY],
         channelNames: ["watercooler"],
+        directoryState: "resolved",
       },
     ],
   });
@@ -1033,6 +1034,7 @@ test("relay-only allowlisted agents are visible in channel mentions", async ({
         respondTo: "allowlist",
         respondToAllowlist: [MOCK_VIEWER_PUBKEY],
         channelNames: ["general"],
+        directoryState: "resolved",
       },
     ],
   });
@@ -1059,6 +1061,7 @@ test("relay-only allowlisted agents stay hidden outside their channel", async ({
         respondTo: "allowlist",
         respondToAllowlist: [MOCK_VIEWER_PUBKEY],
         channelNames: ["agents"],
+        directoryState: "resolved",
       },
     ],
   });
@@ -1081,6 +1084,7 @@ test("relay-only anyone agents are visible when a channel is shared", async ({
         name: "quinn",
         respondTo: "anyone",
         channelNames: ["general"],
+        directoryState: "resolved",
       },
     ],
   });
@@ -1115,7 +1119,7 @@ for (const directoryState of ["incomplete", "untrusted"] as const) {
   });
 }
 
-test("settled directory absence permits an in-channel bot mention", async ({
+test("absent directory policy keeps an in-channel bot hidden", async ({
   page,
 }) => {
   await installMockBridge(page, {
@@ -1131,7 +1135,7 @@ test("settled directory absence permits an in-channel bot mention", async ({
   await page.goto("/");
   await page.getByTestId("channel-general").click();
   await page.getByTestId("message-input").fill("@alice");
-  await expect(autocomplete(page).getByText("alice")).toBeVisible();
+  await expect(autocomplete(page)).toHaveCount(0);
 });
 
 test("relay-only excluded agents stay hidden from channel mentions", async ({
@@ -1145,6 +1149,7 @@ test("relay-only excluded agents stay hidden from channel mentions", async ({
         respondTo: "allowlist",
         respondToAllowlist: [TEST_IDENTITIES.outsider.pubkey],
         channelNames: ["general"],
+        directoryState: "resolved",
       },
     ],
   });
@@ -1169,6 +1174,7 @@ test("shared agents wait for initial directory authorization", async ({
         respondTo: "allowlist",
         respondToAllowlist: [MOCK_VIEWER_PUBKEY],
         channelNames: ["general"],
+        directoryState: "resolved",
       },
     ],
   });

@@ -8611,6 +8611,8 @@ async function handleStartManagedAgent(
   agent.updated_at = now;
   agent.last_started_at = now;
   agent.last_error = null;
+  agent.needs_restart = false;
+  agent.restart_diff = [];
   setMockPresenceStatus(agent.pubkey, "online");
   agent.log_lines.push(
     agent.backend.type === "provider"
@@ -8712,6 +8714,12 @@ async function handleUpdateManagedAgent(args: {
   };
 }): Promise<{ agent: RawManagedAgent; profile_sync_error: string | null }> {
   const agent = getMockManagedAgent(args.input.pubkey);
+  const accessChanged =
+    (args.input.respondTo !== undefined &&
+      args.input.respondTo !== agent.respond_to) ||
+    (args.input.respondToAllowlist !== undefined &&
+      args.input.respondToAllowlist.join(",") !==
+        agent.respond_to_allowlist.join(","));
   if (args.input.name !== undefined) {
     agent.name = args.input.name;
   }
@@ -8729,6 +8737,13 @@ async function handleUpdateManagedAgent(args: {
   }
   if (args.input.respondToAllowlist !== undefined) {
     agent.respond_to_allowlist = args.input.respondToAllowlist;
+  }
+  if (
+    accessChanged &&
+    (agent.status === "running" || agent.status === "deployed")
+  ) {
+    agent.needs_restart = true;
+    agent.restart_diff = [{ field: "access", change: "updated" }];
   }
   agent.updated_at = new Date().toISOString();
   return { agent: cloneManagedAgent(agent), profile_sync_error: null };

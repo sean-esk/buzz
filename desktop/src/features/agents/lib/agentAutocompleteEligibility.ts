@@ -36,10 +36,7 @@ export function relayAgentIsSharedWithUser(
     ? normalizePubkey(currentPubkey)
     : null;
 
-  if (
-    agent.directoryState !== undefined &&
-    agent.directoryState !== "resolved"
-  ) {
+  if (agent.directoryState !== "resolved") {
     return false;
   }
   if (agent.respondTo === "anyone") {
@@ -64,8 +61,7 @@ export function relayAgentCanRespondInChannel(
   currentPubkey?: string | null,
 ) {
   return (
-    (agent.directoryState === undefined ||
-      agent.directoryState === "resolved") &&
+    agent.directoryState === "resolved" &&
     agent.channelIds.includes(channelId) &&
     relayAgentPolicyAllows(
       agent,
@@ -156,29 +152,14 @@ export function isAgentIdentityInAllowedList(
 
 export function shouldHideAgentFromMentions({
   isAgent,
-  isMember,
   pubkey,
   mentionableAgentPubkeys,
-  directoryAgentPubkeys,
-  relayDirectorySettled = false,
 }: {
   isAgent: boolean;
-  isMember: boolean;
   pubkey: string;
   mentionableAgentPubkeys: ReadonlySet<string>;
-  directoryAgentPubkeys: ReadonlySet<string>;
-  relayDirectorySettled: boolean;
 }) {
-  if (!isAgent) return false;
-  const normalized = normalizePubkey(pubkey);
-  // Invocable => always show.
-  if (mentionableAgentPubkeys.has(normalized)) return false;
-  // Non-member, non-invocable => hide (preserves prior behavior).
-  if (!isMember) return true;
-  // Membership fallback is only safe after a successful directory settle.
-  // A present directory entry that did not make the allowed set is an
-  // explicit denial, incomplete record, or failed owner verification.
-  return !relayDirectorySettled || directoryAgentPubkeys.has(normalized);
+  return isAgent && !mentionableAgentPubkeys.has(normalizePubkey(pubkey));
 }
 
 export function isAgentMentionChannelType(type?: string | null) {

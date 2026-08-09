@@ -155,6 +155,10 @@ export function PersonaAdvancedFields({
         }
         variant="persona"
       />
+      <p className="text-sm text-muted-foreground">
+        Default for new instances. Existing instances keep their own access
+        setting.
+      </p>
 
       {afterRespondTo}
 

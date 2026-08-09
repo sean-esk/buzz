@@ -171,6 +171,14 @@ with a TypeScript lookup table or an id comparison in a component.
    `getAgentAccessOwnerOnly()` is true, every managed agent's access control is
    locked to owner-only, including provider-backed agents. A provider backend
    does not prove remote execution and must never create a policy carve-out.
+12. **Definition access is a mint-time default; instance access is live
+    authority.** A definition's `respond_to`, allowlist, and parallelism are
+    copied only when an instance is created. Existing keyed instances remain
+    authoritative for their editor, restart snapshot, runtime environment, and
+    public policy. Never fan out a definition edit to existing instances or
+    render it as their live policy. Mention autocomplete is equally fail-safe:
+    a known remote agent requires both a resolved policy authorizing the viewer
+    and exact channel membership; membership alone is never authorization.
 
 ## The tests that enforce this
 

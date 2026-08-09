@@ -402,12 +402,9 @@ export function UserProfilePanel({
   });
 
   const handleEditAgent = React.useCallback(() => {
-    if (resolvedPersona) {
-      setPersonaDialogState(editPersonaDialogState(resolvedPersona));
-      return;
-    }
-    setEditAgentOpen(true);
-  }, [resolvedPersona]);
+    if (managedAgent || !resolvedPersona) return void setEditAgentOpen(true);
+    setPersonaDialogState(editPersonaDialogState(resolvedPersona));
+  }, [managedAgent, resolvedPersona]);
 
   const { deleteManagedAgentRecord, deleteManagedAgentsForPersona } =
     useProfileAgentDeletion({

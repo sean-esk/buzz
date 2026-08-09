@@ -362,6 +362,47 @@ fn rename_re_retains_identity_record_with_new_name() {
     );
 }
 
+#[test]
+fn access_edit_re_retains_newer_policy_at_same_coordinate() {
+    let dir = TempDir::new().unwrap();
+    let keys = nostr::Keys::generate();
+    let conn = open_retention_db(&dir.path().join("retention.db")).unwrap();
+    let owner = keys.public_key().to_hex();
+    let pubkey = "7".repeat(64);
+    let mut record = sample_record(&pubkey, "Fizz");
+
+    assert!(retain_agent_record(&conn, &keys, &record).unwrap());
+    let first = get_retained_event(&conn, KIND_MANAGED_AGENT, &owner, &pubkey)
+        .unwrap()
+        .unwrap();
+    mark_synced(
+        &conn,
+        first.kind,
+        &first.pubkey,
+        &first.d_tag,
+        first.created_at,
+        &first.content,
+    )
+    .unwrap();
+
+    record.respond_to = crate::managed_agents::RespondTo::Anyone;
+    assert!(retain_agent_record(&conn, &keys, &record).unwrap());
+
+    let row = get_retained_event(&conn, KIND_MANAGED_AGENT, &owner, &pubkey)
+        .unwrap()
+        .unwrap();
+    let content: serde_json::Value = serde_json::from_str(&row.content).unwrap();
+    assert_eq!(row.kind, KIND_MANAGED_AGENT);
+    assert_eq!(row.d_tag, pubkey);
+    assert!(row.created_at > first.created_at);
+    assert_eq!(content["respond_to"], "anyone");
+    assert!(
+        content.get("respond_to_allowlist").is_none(),
+        "an empty allowlist is omitted from a non-allowlist policy projection"
+    );
+    assert!(row.pending_sync);
+}
+
 /// An unchanged record is a true no-op: no rewrite, no `pending_sync` churn.
 /// This is what lets every edit path call the engine unconditionally.
 #[test]

@@ -90,23 +90,16 @@ The `content` field is a **plaintext** (unencrypted) JSON object:
 | `model` | string \| null | `null` | Model identifier (e.g. `"claude-opus-4"`). |
 | `provider` | string \| null | `null` | Model provider (e.g. `"anthropic"`). |
 | `name_pool` | string[] | `[]` | Pool of display names for agent instances spawned from this definition. When non-empty, the spawning system picks a name from this pool for each new agent instance, enabling multiple concurrent agents from the same definition to have distinct identities. |
-| `respond_to` | string \| null | `null` | **Reserved.** Default respond-to policy for instances spawned from this definition: `"anyone"`, `"owner-only"`, or `"allowlist"`. `null` defers to the client default. |
-| `respond_to_allowlist` | string[] | `[]` | **Reserved.** Allowlisted author pubkeys (64-char lowercase hex) when `respond_to` is `"allowlist"`. Ignored otherwise. |
-| `parallelism` | integer \| null | `null` | **Reserved.** Default max concurrent turns for spawned instances. `null` defers to the client default. |
+| `respond_to` | string \| null | `null` | Default respond-to policy for instances spawned from this definition: `"anyone"`, `"owner-only"`, or `"allowlist"`. `null` defers to the client default. |
+| `respond_to_allowlist` | string[] | `[]` | Allowlisted author pubkeys (64-char lowercase hex) when `respond_to` is `"allowlist"`. Ignored otherwise. |
+| `parallelism` | integer \| null | `null` | Default max concurrent turns for spawned instances. `null` defers to the client default. |
 
 The behavioral fields (`respond_to`, `respond_to_allowlist`,
 `parallelism`) are definition-level *defaults*: a spawned instance copies them
-at creation and may be reconfigured independently afterwards. They were
-previously carried only on the kind:30177 projection (see
-"Slimming: kind:30177" below).
-
-**Status: reserved.** In the current implementation these behavioral fields are
-*parsed but not yet applied*: readers tolerate and preserve them at the wire
-layer, but the local definition store does not yet carry them and writers do
-not emit them. The instance-copy-at-creation behavior activates in a
-subsequent release (the create-path unification). Until then a definition
-carrying these fields round-trips through the wire type but the values do not
-survive a local edit-and-republish cycle.
+at creation and may be reconfigured independently afterwards. Editing a
+definition never overwrites an existing instance's independent values. They
+are not kind:30177 state; that per-instance projection continues to carry the
+instance's own access and parallelism values (see "Slimming: kind:30177" below).
 
 Unknown fields MUST be ignored by readers (forward compatibility).
 
