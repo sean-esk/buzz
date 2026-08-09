@@ -389,15 +389,7 @@ test("shouldHideAgentFromMentions: shows invocable agents even when non-member",
   );
 });
 
-test("shouldHideAgentFromMentions: hides all non-invocable agents, including members", () => {
-  assert.equal(
-    shouldHideAgentFromMentions({
-      isAgent: true,
-      pubkey: PUB_A,
-      mentionableAgentPubkeys: new Set(),
-    }),
-    true,
-  );
+test("shouldHideAgentFromMentions: hides agents absent from the authorized set", () => {
   assert.equal(
     shouldHideAgentFromMentions({
       isAgent: true,

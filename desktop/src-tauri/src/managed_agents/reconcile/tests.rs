@@ -120,6 +120,32 @@ fn edited_record_is_republished() {
 }
 
 #[test]
+fn allowlist_access_edit_retains_exact_authorized_pubkeys() {
+    let dir = TempDir::new().unwrap();
+    let keys = nostr::Keys::generate();
+    let conn = open_retention_db(&dir.path().join("retention.db")).unwrap();
+    let owner = keys.public_key().to_hex();
+    let pubkey = "6".repeat(64);
+    let authorized_pubkeys = vec!["a".repeat(64), "b".repeat(64)];
+    let mut record = sample_record(&pubkey, "Allowlist Agent");
+    record.respond_to = crate::managed_agents::RespondTo::Allowlist;
+    record.respond_to_allowlist = authorized_pubkeys.clone();
+
+    assert!(retain_agent_record(&conn, &keys, &record).unwrap());
+
+    let row = get_retained_event(&conn, KIND_MANAGED_AGENT, &owner, &pubkey)
+        .unwrap()
+        .unwrap();
+    let content: serde_json::Value = serde_json::from_str(&row.content).unwrap();
+    assert_eq!(content["respond_to"], "allowlist");
+    assert_eq!(
+        content["respond_to_allowlist"],
+        serde_json::json!(authorized_pubkeys),
+        "the retained projection preserves the exact authorized pubkey set"
+    );
+}
+
+#[test]
 fn excluded_field_edit_is_noop() {
     let dir = TempDir::new().unwrap();
     let keys = nostr::Keys::generate();

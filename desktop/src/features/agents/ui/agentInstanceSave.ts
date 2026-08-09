@@ -1,9 +1,9 @@
-import { setManagedAgentAutoRestart } from "@/shared/api/tauriManagedAgents";
+import type { UpdateManagedAgentResponse } from "@/shared/api/tauri";
 import type { ManagedAgent, UpdateManagedAgentInput } from "@/shared/api/types";
 
-type UpdateManagedAgentResult = {
-  agent: ManagedAgent;
-  profileSyncError: string | null;
+type SetManagedAgentAutoRestartInput = {
+  pubkey: string;
+  autoRestartOnConfigChange: boolean;
 };
 
 /**
@@ -16,17 +16,23 @@ export async function saveAgentInstance({
   autoRestartOnConfigChange,
   input,
   onAutoRestartPreferenceError,
+  setAutoRestart,
   update,
 }: {
   agent: ManagedAgent;
   autoRestartOnConfigChange: boolean;
   input: UpdateManagedAgentInput;
-  onAutoRestartPreferenceError: () => void;
-  update: (input: UpdateManagedAgentInput) => Promise<UpdateManagedAgentResult>;
+  onAutoRestartPreferenceError: (error: unknown) => void;
+  setAutoRestart: (
+    input: SetManagedAgentAutoRestartInput,
+  ) => Promise<ManagedAgent>;
+  update: (
+    input: UpdateManagedAgentInput,
+  ) => Promise<UpdateManagedAgentResponse>;
 }): Promise<
-  { result: UpdateManagedAgentResult; savedAgent: ManagedAgent } | undefined
+  { result: UpdateManagedAgentResponse; savedAgent: ManagedAgent } | undefined
 > {
-  let result: UpdateManagedAgentResult;
+  let result: UpdateManagedAgentResponse;
   try {
     result = await update(input);
   } catch {
@@ -36,12 +42,12 @@ export async function saveAgentInstance({
   let savedAgent = result.agent;
   if (autoRestartOnConfigChange !== agent.autoRestartOnConfigChange) {
     try {
-      savedAgent = await setManagedAgentAutoRestart(
-        agent.pubkey,
+      savedAgent = await setAutoRestart({
+        pubkey: agent.pubkey,
         autoRestartOnConfigChange,
-      );
-    } catch {
-      onAutoRestartPreferenceError();
+      });
+    } catch (error: unknown) {
+      onAutoRestartPreferenceError(error);
     }
   }
 

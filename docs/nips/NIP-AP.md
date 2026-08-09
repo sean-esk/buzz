@@ -94,12 +94,12 @@ The `content` field is a **plaintext** (unencrypted) JSON object:
 | `respond_to_allowlist` | string[] | `[]` | Allowlisted author pubkeys (64-char lowercase hex) when `respond_to` is `"allowlist"`. Ignored otherwise. |
 | `parallelism` | integer \| null | `null` | Default max concurrent turns for spawned instances. `null` defers to the client default. |
 
-The behavioral fields (`respond_to`, `respond_to_allowlist`,
-`parallelism`) are definition-level *defaults*: a spawned instance copies them
-at creation and may be reconfigured independently afterwards. Editing a
-definition never overwrites an existing instance's independent values. They
-are not kind:30177 state; that per-instance projection continues to carry the
-instance's own access and parallelism values (see "Slimming: kind:30177" below).
+The values of the behavioral fields (`respond_to`, `respond_to_allowlist`,
+`parallelism`) on kind:30175 are definition-level *defaults*, copied only when
+an instance is created. Editing a definition never overwrites an existing
+instance's independently editable values. After creation, the instance's
+same-named authoritative kind:30177 fields are independent state and MUST
+continue to be published in its keyed event (see "Slimming: kind:30177" below).
 
 Unknown fields MUST be ignored by readers (forward compatibility).
 

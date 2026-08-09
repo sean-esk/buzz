@@ -8,6 +8,7 @@ import {
   useAgentConfigSurface,
   useBakedBuildEnvKeysQuery,
   usePersonasQuery,
+  useSetManagedAgentAutoRestartMutation,
   useStartManagedAgentMutation,
   useUpdateManagedAgentMutation,
 } from "@/features/agents/hooks";
@@ -94,6 +95,10 @@ import { showAgentProfileSyncWarning } from "./agentProfileSyncWarning";
 import { AddCustomHarnessDialog } from "./AddCustomHarnessDialog";
 import { saveAgentInstance } from "./agentInstanceSave";
 import {
+  reportAgentInstanceSaveFlowError,
+  reportAutoRestartPreferenceError,
+} from "./agentInstanceSaveFeedback";
+import {
   ADD_CUSTOM_HARNESS_OPTION,
   runtimeDropdownAction,
   usePendingHarnessSelection,
@@ -117,11 +122,11 @@ export function AgentInstanceEditDialog({
   onUpdated?: (agent: ManagedAgent) => void;
 }) {
   const updateMutation = useUpdateManagedAgentMutation();
+  const setAutoRestartMutation = useSetManagedAgentAutoRestartMutation();
   const startMutation = useStartManagedAgentMutation();
   const runtimesQuery = useAcpRuntimesQuery({ enabled: open });
   const configSurfaceQuery = useAgentConfigSurface(open ? agent.pubkey : null);
   const runtimes = runtimesQuery.data ?? [];
-
   const [name, setName] = React.useState(agent.name);
   const [aiDefaultsOpen, setAiDefaultsOpen] = React.useState(false);
   const aiDefaultsTriggerRef = React.useRef<HTMLButtonElement>(null);
@@ -703,8 +708,7 @@ export function AgentInstanceEditDialog({
           ? undefined
           : submitEnvVars,
         respondTo: respondTo !== agent.respondTo ? respondTo : undefined,
-        // Allowlist changes are sent only while allowlist mode is active;
-        // omission preserves the stored list when switching modes back and forth.
+        // Allowlist changes are sent only while allowlist mode is active; omission preserves the stored list when switching modes.
         respondToAllowlist:
           respondTo === "allowlist" &&
           respondToAllowlist.join(",") !== agent.respondToAllowlist.join(",")
@@ -713,16 +717,14 @@ export function AgentInstanceEditDialog({
       };
       const accessChanged =
         input.respondTo !== undefined || input.respondToAllowlist !== undefined;
-
       const saved = await saveAgentInstance({
         agent,
         autoRestartOnConfigChange,
         input,
+        setAutoRestart: setAutoRestartMutation.mutateAsync,
         update: updateMutation.mutateAsync,
-        onAutoRestartPreferenceError: () =>
-          toast.error(
-            "Agent saved, but the automatic restart preference was not updated. Reopen this agent and try again.",
-          ),
+        onAutoRestartPreferenceError: (error) =>
+          reportAutoRestartPreferenceError(agent.pubkey, error),
       });
       if (!saved) return;
       const { result, savedAgent } = saved;
@@ -742,7 +744,6 @@ export function AgentInstanceEditDialog({
               : "Access saved. Use Restart Agent on the profile to apply it.",
         );
       }
-      // Inactive agents need explicit start/deploy recovery after saving.
       if (!isManagedAgentActive(savedAgent)) {
         const startedName = savedAgent.name;
         toast(`${startedName} saved while stopped.`, {
@@ -762,8 +763,8 @@ export function AgentInstanceEditDialog({
           },
         });
       }
-    } catch {
-      // React Query stores the error; keep dialog open and render it inline.
+    } catch (error: unknown) {
+      reportAgentInstanceSaveFlowError(agent.pubkey, error);
     }
   }
 

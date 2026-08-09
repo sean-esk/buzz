@@ -36,6 +36,19 @@ const AGENT_PUBKEY = TEST_IDENTITIES.tyler.pubkey;
 const AGENT_NAME = "Tyler Agent";
 const PERSONA_ID = "persona-edit-e2e";
 
+function managedAgentWriteCommands(
+  commands: ReadonlyArray<{ command: string; payload: unknown }>,
+  start: number,
+) {
+  return commands
+    .slice(start)
+    .filter(
+      (entry) =>
+        entry.command === "update_managed_agent" ||
+        entry.command === "set_managed_agent_auto_restart",
+    );
+}
+
 /**
  * Open the Edit Agent dialog for the seeded managed agent via the profile
  * panel (agents view → agent card → Edit quick action) — EditAgentDialog's
@@ -507,11 +520,22 @@ test.describe("edit agent dialog", () => {
     });
 
     await openEditDialog(page);
+    const commandLogStart = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__?.length ?? 0,
+    );
     await page.getByTestId("edit-agent-dialog-submit").click();
 
     await expect(page.getByTestId("edit-agent-dialog")).not.toBeVisible();
     await expect(page.getByText(/^Access saved\./)).toHaveCount(0);
     await expect(page.getByTestId("restart-diff-badge")).toHaveCount(0);
+    const commands = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__ ?? [],
+    );
+    expect(
+      managedAgentWriteCommands(commands, commandLogStart).map(
+        (entry) => entry.command,
+      ),
+    ).toEqual(["update_managed_agent"]);
   });
 
   test("stopped agents offer an explicit start recovery after an access save", async ({
@@ -559,6 +583,9 @@ test.describe("edit agent dialog", () => {
     });
 
     await openEditDialog(page);
+    const commandLogStart = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__?.length ?? 0,
+    );
     await page.getByRole("button", { name: "Advanced", exact: true }).click();
     await page.locator("#edit-agent-auto-restart").uncheck();
     await pickDropdownOption(page, "agent-respond-to", "Anyone");
@@ -577,5 +604,93 @@ test.describe("edit agent dialog", () => {
     await expect(page.locator("#agent-respond-to")).toHaveText("Anyone");
     await page.getByRole("button", { name: "Advanced", exact: true }).click();
     await expect(page.locator("#edit-agent-auto-restart")).toBeChecked();
+
+    const commands = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__ ?? [],
+    );
+    expect(
+      managedAgentWriteCommands(commands, commandLogStart).map(
+        (entry) => entry.command,
+      ),
+    ).toEqual(["update_managed_agent", "set_managed_agent_auto_restart"]);
+  });
+
+  test("updates automatic restart through the cache-owning mutation after the primary save", async ({
+    page,
+  }) => {
+    await installMockBridge(page, {
+      managedAgents: [
+        {
+          pubkey: AGENT_PUBKEY,
+          name: AGENT_NAME,
+          status: "stopped",
+          channelNames: ["agents"],
+          autoRestartOnConfigChange: true,
+        },
+      ],
+    });
+
+    await openEditDialog(page);
+    const commandLogStart = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__?.length ?? 0,
+    );
+    await page.getByRole("button", { name: "Advanced", exact: true }).click();
+    await page.locator("#edit-agent-auto-restart").uncheck();
+    await page.getByTestId("edit-agent-dialog-submit").click();
+    await expect(page.getByTestId("edit-agent-dialog")).not.toBeVisible();
+
+    const commands = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__ ?? [],
+    );
+    expect(
+      managedAgentWriteCommands(commands, commandLogStart).map(
+        (entry) => entry.command,
+      ),
+    ).toEqual(["update_managed_agent", "set_managed_agent_auto_restart"]);
+    expect(
+      managedAgentWriteCommands(commands, commandLogStart).find(
+        (entry) => entry.command === "set_managed_agent_auto_restart",
+      )?.payload,
+    ).toEqual({ pubkey: AGENT_PUBKEY, autoRestartOnConfigChange: false });
+
+    await page.getByTestId("user-profile-edit-agent").click();
+    await page.getByRole("button", { name: "Advanced", exact: true }).click();
+    await expect(page.locator("#edit-agent-auto-restart")).not.toBeChecked();
+  });
+
+  test("does not write automatic restart when the primary agent save fails", async ({
+    page,
+  }) => {
+    await installMockBridge(page, {
+      updateManagedAgentErrors: ["Mock agent save failed."],
+      managedAgents: [
+        {
+          pubkey: AGENT_PUBKEY,
+          name: AGENT_NAME,
+          status: "running",
+          channelNames: ["agents"],
+          autoRestartOnConfigChange: true,
+        },
+      ],
+    });
+
+    await openEditDialog(page);
+    const commandLogStart = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__?.length ?? 0,
+    );
+    await page.getByRole("button", { name: "Advanced", exact: true }).click();
+    await page.locator("#edit-agent-auto-restart").uncheck();
+    await page.getByTestId("edit-agent-dialog-submit").click();
+
+    await expect(page.getByText("Mock agent save failed.")).toBeVisible();
+    await expect(page.getByTestId("edit-agent-dialog")).toBeVisible();
+    const commands = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__ ?? [],
+    );
+    expect(
+      managedAgentWriteCommands(commands, commandLogStart).map(
+        (entry) => entry.command,
+      ),
+    ).toEqual(["update_managed_agent"]);
   });
 });

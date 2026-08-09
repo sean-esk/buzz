@@ -37,9 +37,11 @@ export function isManagedAgentActive(agent: Pick<ManagedAgent, "status">) {
 
 /**
  * Describes the action required for a saved access-policy change to reach the
- * live process. Provider deployments cannot be restarted by the local policy
- * loop, while local agents can be restarted automatically only for a real
- * running-process drift edge.
+ * live process. Callers must first establish that the agent is active and the
+ * user made a real access-policy edit. Provider deployments cannot be restarted
+ * by the local policy loop, while local agents can be restarted automatically
+ * only for a real running-process drift edge. `manual-local` is fallback
+ * feedback for every remaining active local state.
  */
 export function accessChangeApplyMode(
   agent: Pick<
