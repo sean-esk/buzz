@@ -79,6 +79,24 @@ async function pickDropdownOption(
 }
 
 test.describe("agent definition dialog", () => {
+  test("Advanced visibly explains that access applies only to new instances", async ({
+    page,
+  }) => {
+    await installMockBridge(page);
+    await page.goto("/");
+    await page.getByTestId("open-agents-view").click();
+    await page.getByTestId("new-agent-card").click();
+
+    const dialog = page.getByTestId("persona-dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Advanced", exact: true }).click();
+    await expect(
+      dialog.getByText(
+        "Default for new instances. Existing instances keep their own access setting.",
+      ),
+    ).toBeVisible();
+  });
+
   test("owner-only-access build shows disabled agent access with an explanation", async ({
     page,
   }) => {
@@ -519,5 +537,45 @@ test.describe("edit agent dialog", () => {
       page.getByText(`${AGENT_NAME} saved while stopped.`),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Start now" })).toBeVisible();
+  });
+
+  test("reports partial success when the automatic restart preference write fails", async ({
+    page,
+  }) => {
+    await installMockBridge(page, {
+      setManagedAgentAutoRestartErrors: [
+        "Mock automatic restart write failed.",
+      ],
+      managedAgents: [
+        {
+          pubkey: AGENT_PUBKEY,
+          name: AGENT_NAME,
+          status: "running",
+          channelNames: ["agents"],
+          respondTo: "owner-only",
+          autoRestartOnConfigChange: true,
+        },
+      ],
+    });
+
+    await openEditDialog(page);
+    await page.getByRole("button", { name: "Advanced", exact: true }).click();
+    await page.locator("#edit-agent-auto-restart").uncheck();
+    await pickDropdownOption(page, "agent-respond-to", "Anyone");
+    await page.getByTestId("edit-agent-dialog-submit").click();
+
+    await expect(page.getByTestId("edit-agent-dialog")).not.toBeVisible();
+    await expect(
+      page.getByText(
+        "Agent saved, but the automatic restart preference was not updated. Reopen this agent and try again.",
+      ),
+    ).toBeVisible();
+
+    // The authoritative access write committed despite the independent
+    // preference failure, and reopening reflects the still-stored preference.
+    await page.getByTestId("user-profile-edit-agent").click();
+    await expect(page.locator("#agent-respond-to")).toHaveText("Anyone");
+    await page.getByRole("button", { name: "Advanced", exact: true }).click();
+    await expect(page.locator("#edit-agent-auto-restart")).toBeChecked();
   });
 });

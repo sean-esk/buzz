@@ -6,10 +6,6 @@ const respondToFieldSource = await readFile(
   new URL("./RespondToField.tsx", import.meta.url),
   "utf8",
 );
-const personaAdvancedFieldsSource = await readFile(
-  new URL("./PersonaAdvancedFields.tsx", import.meta.url),
-  "utf8",
-);
 
 /**
  * Copy assertions run against this rather than the raw source: JSX text wraps
@@ -78,11 +74,4 @@ test("primary respond-to copy does not expose implementation jargon", () => {
   for (const jargon of ["Nostr authors", "!shutdown"]) {
     assert.doesNotMatch(primaryFieldSource, new RegExp(jargon));
   }
-});
-
-test("definition access explains its mint-time default semantics", () => {
-  assert.match(
-    personaAdvancedFieldsSource.replace(/\s+/g, " "),
-    /Default for new instances\. Existing instances keep their own access setting\./,
-  );
 });

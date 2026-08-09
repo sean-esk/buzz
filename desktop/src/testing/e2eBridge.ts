@@ -333,6 +333,10 @@ type E2eConfig = {
     sendMessageErrors?: string[];
     /** Reject successive managed-agent starts, then resume. */
     startManagedAgentErrors?: string[];
+    /** Reject successive managed-agent updates, then resume. */
+    updateManagedAgentErrors?: string[];
+    /** Reject successive automatic-restart preference writes, then resume. */
+    setManagedAgentAutoRestartErrors?: string[];
     /** Delay (ms) after snapshotting a thread-replies page so E2E tests can
      *  deliver live reply/aux events while an older response is in flight. */
     threadRepliesDelayMs?: number;
@@ -8681,10 +8685,18 @@ async function handleSetManagedAgentStartOnAppLaunch(args: {
   return cloneManagedAgent(agent);
 }
 
-async function handleSetManagedAgentAutoRestart(args: {
-  pubkey: string;
-  autoRestartOnConfigChange: boolean;
-}): Promise<RawManagedAgent> {
+async function handleSetManagedAgentAutoRestart(
+  args: {
+    pubkey: string;
+    autoRestartOnConfigChange: boolean;
+  },
+  config?: E2eConfig,
+): Promise<RawManagedAgent> {
+  const autoRestartError =
+    config?.mock?.setManagedAgentAutoRestartErrors?.shift();
+  if (autoRestartError) {
+    throw new Error(autoRestartError);
+  }
   const agent = getMockManagedAgent(args.pubkey);
   agent.auto_restart_on_config_change = args.autoRestartOnConfigChange;
   agent.updated_at = new Date().toISOString();
@@ -8703,17 +8715,24 @@ async function handleGetManagedAgentLog(args: {
   };
 }
 
-async function handleUpdateManagedAgent(args: {
-  input: {
-    pubkey: string;
-    name?: string;
-    model?: string | null;
-    systemPrompt?: string | null;
-    envVars?: Record<string, string>;
-    respondTo?: "owner-only" | "allowlist" | "anyone";
-    respondToAllowlist?: string[];
-  };
-}): Promise<{ agent: RawManagedAgent; profile_sync_error: string | null }> {
+async function handleUpdateManagedAgent(
+  args: {
+    input: {
+      pubkey: string;
+      name?: string;
+      model?: string | null;
+      systemPrompt?: string | null;
+      envVars?: Record<string, string>;
+      respondTo?: "owner-only" | "allowlist" | "anyone";
+      respondToAllowlist?: string[];
+    };
+  },
+  config?: E2eConfig,
+): Promise<{ agent: RawManagedAgent; profile_sync_error: string | null }> {
+  const updateError = config?.mock?.updateManagedAgentErrors?.shift();
+  if (updateError) {
+    throw new Error(updateError);
+  }
   const agent = getMockManagedAgent(args.input.pubkey);
   const restartDiff: RestartDiffEntry[] = [];
   const accessChanged =
@@ -12340,6 +12359,7 @@ export function maybeInstallE2eTauriMocks() {
       case "set_managed_agent_auto_restart":
         return handleSetManagedAgentAutoRestart(
           payload as Parameters<typeof handleSetManagedAgentAutoRestart>[0],
+          activeConfig,
         );
       case "set_managed_agent_start_on_app_launch":
         return handleSetManagedAgentStartOnAppLaunch(
@@ -12549,6 +12569,7 @@ export function maybeInstallE2eTauriMocks() {
       case "update_managed_agent":
         return handleUpdateManagedAgent(
           payload as Parameters<typeof handleUpdateManagedAgent>[0],
+          activeConfig,
         );
       case "create_channel":
         return handleCreateChannel(

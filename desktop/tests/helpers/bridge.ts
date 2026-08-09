@@ -287,6 +287,10 @@ type MockBridgeOptions = {
   sendMessageErrors?: string[];
   /** Reject successive managed-agent starts, then resume. */
   startManagedAgentErrors?: string[];
+  /** Reject successive managed-agent updates, then resume. */
+  updateManagedAgentErrors?: string[];
+  /** Reject successive automatic-restart preference writes, then resume. */
+  setManagedAgentAutoRestartErrors?: string[];
   /** Delay (ms) after snapshotting a thread-replies page so E2E tests can
    * deliver live reply/aux events while an older response is in flight. */
   threadRepliesDelayMs?: number;

@@ -318,7 +318,7 @@ pubkey_o = 79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798
 
 ```jsonc
 // Body (exact UTF-8, no trailing whitespace):
-{"display_name":"Test Agent","system_prompt":"You are a test assistant.","avatar_url":"https://example.com/avatar.png","runtime":"goose","model":"claude-opus-4","provider":"anthropic","name_pool":["Alpha","Beta"]}
+{"display_name":"Test Agent","system_prompt":"You are a test assistant.","avatar_url":"https://example.com/avatar.png","runtime":"goose","model":"claude-opus-4","provider":"anthropic","name_pool":["Alpha","Beta"],"respond_to":"allowlist","respond_to_allowlist":["79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"],"parallelism":3}
 ```
 
 ```
@@ -326,7 +326,7 @@ kind            = 30175
 pubkey          = 79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798
 created_at      = 1700000000
 tags            = [["d", "test-agent"]]
-content         = {"display_name":"Test Agent","system_prompt":"You are a test assistant.","avatar_url":"https://example.com/avatar.png","runtime":"goose","model":"claude-opus-4","provider":"anthropic","name_pool":["Alpha","Beta"]}
+content         = {"display_name":"Test Agent","system_prompt":"You are a test assistant.","avatar_url":"https://example.com/avatar.png","runtime":"goose","model":"claude-opus-4","provider":"anthropic","name_pool":["Alpha","Beta"],"respond_to":"allowlist","respond_to_allowlist":["79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"],"parallelism":3}
 id              = <derived per NIP-01: sha256([0, pubkey, created_at, kind, tags, content])>
 sig             = <BIP-340 Schnorr signature with aux=0x00…00>
 ```

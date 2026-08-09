@@ -59,12 +59,18 @@ export function EditRespondToDialog({
       respondTo !== agent.respondTo ||
       (respondTo === "allowlist" &&
         respondToAllowlist.join(",") !== agent.respondToAllowlist.join(","));
-    const result = await updateMutation.mutateAsync({
-      pubkey: agent.pubkey,
-      respondTo,
-      respondToAllowlist:
-        respondTo === "allowlist" ? respondToAllowlist : undefined,
-    });
+    let result: { agent: ManagedAgent; profileSyncError: string | null };
+    try {
+      result = await updateMutation.mutateAsync({
+        pubkey: agent.pubkey,
+        respondTo,
+        respondToAllowlist:
+          respondTo === "allowlist" ? respondToAllowlist : undefined,
+      });
+    } catch {
+      // React Query stores the error; keep the dialog open and render it inline.
+      return;
+    }
     onOpenChange(false);
     if (accessChanged && isManagedAgentActive(result.agent)) {
       const applyMode = accessChangeApplyMode(result.agent);

@@ -160,6 +160,40 @@ test("a provider-backed agent's warning names the server, not this computer", as
   await expect(page.getByTestId("restart-diff-badge")).toHaveCount(0);
 });
 
+test("a rejected channel access save stays inline without an unhandled rejection", async ({
+  page,
+}) => {
+  const agent = TEST_IDENTITIES.charlie;
+  const pageErrors: Error[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error));
+
+  await installMockBridge(page, {
+    updateManagedAgentErrors: ["Mock access save failed."],
+    managedAgents: [
+      {
+        pubkey: agent.pubkey,
+        name: "Hack Day Helper",
+        status: "running",
+        channelNames: ["general"],
+        respondTo: "owner-only",
+      },
+    ],
+  });
+  await page.goto("/");
+  await openAgentAccessDialog(page, agent.pubkey);
+
+  await page.getByTestId("agent-respond-to-select").selectOption("anyone");
+  await page.getByRole("button", { name: "Save access" }).click();
+
+  await expect(
+    page.getByText("Mock access save failed.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("dialog", { name: "Manage agent access" }),
+  ).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
 test("persona-backed edit warns before saving open access", async ({
   page,
 }) => {

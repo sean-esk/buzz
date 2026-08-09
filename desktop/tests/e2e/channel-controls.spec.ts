@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { waitForAnimations } from "../helpers/animations";
 import { installMockBridge } from "../helpers/bridge";
 
 // `general` seeds the mock identity as owner, so the owner/admin-gated
@@ -23,9 +24,7 @@ async function openEditDialog(page: import("@playwright/test").Page) {
 }
 
 async function settle(page: import("@playwright/test").Page) {
-  await page.evaluate(() =>
-    Promise.all(document.getAnimations().map((a) => a.finished)),
-  );
+  await waitForAnimations(page);
 }
 
 async function selectTemporaryChannelType(

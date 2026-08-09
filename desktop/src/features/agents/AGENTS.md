@@ -173,10 +173,13 @@ with a TypeScript lookup table or an id comparison in a component.
    does not prove remote execution and must never create a policy carve-out.
 12. **Definition access is a mint-time default; instance access is live
     authority.** A definition's `respond_to`, allowlist, and parallelism are
-    copied only when an instance is created. Existing keyed instances remain
-    authoritative for their editor, restart snapshot, runtime environment, and
-    public policy. Never fan out a definition edit to existing instances or
-    render it as their live policy. Mention autocomplete is equally fail-safe:
+    copied only when an instance is created. Subject to the owner-only build
+    clamp above, existing keyed instances remain authoritative for their editor,
+    restart snapshot, runtime environment, stored policy, and relay-advertised
+    policy. On a marked owner-only build, that record remains authoritative for
+    those stored and advertised values, while effective spawn/deploy access is
+    projected to owner-only. Never fan out a definition edit to existing
+    instances or render it as their live policy. Mention autocomplete is equally fail-safe:
     a known remote agent requires both a resolved policy authorizing the viewer
     and exact channel membership; membership alone is never authorization.
 
@@ -199,6 +202,14 @@ with a TypeScript lookup table or an id comparison in a component.
 - `lib/agentAccessWarning.test.mjs` — every mode × run-location copy variant
   plus both resolvers, including unknown-reads-as-local and
   blank-`runOn`-is-not-a-provider.
+- `lib/agentAutocompleteEligibility.test.mjs` and
+  `desktop/tests/e2e/mentions.spec.ts` — resolved-policy and exact-channel
+  membership are both required before a remote agent is mentionable.
+- `desktop/tests/e2e/edit-agent.spec.ts`,
+  `desktop/src-tauri/src/managed_agents/reconcile/tests.rs`, and
+  `desktop/src-tauri/src/managed_agents/spawn_snapshot/tests.rs` — live
+  instance profile editing, reconciliation, and spawn snapshots preserve the
+  keyed-instance authority rule.
 - `desktop/tests/e2e/onboarding-agent-defaults.spec.ts` — onboarding behavior
   acceptance coverage for readiness, failure states, defaults, session-draft
   restoration, zero-write Skip, Next save failure/retry, navigation, and
