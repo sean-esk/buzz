@@ -303,34 +303,10 @@ fn round_trip_serialization() {
     assert!(restored.is_active);
 }
 
-/// NIP-AP reference vector (Event 1, `docs/nips/NIP-AP.md:195-207`): the
-/// serialized content bytes MUST match the spec exactly, byte-for-byte.
-/// serde emits fields in declaration order, so this pins the content
-/// encoding — and therefore the NIP-01 event id — for cross-implementation
-/// interop. The field order is `display_name, system_prompt, avatar_url,
-/// runtime, model, provider, name_pool`.
+/// Legacy pre-behavioral-fields body retained to prove compatibility.
 #[test]
-fn content_matches_nip_ap_vector() {
-    // Exact body from NIP-AP.md Event 1 (no trailing whitespace, no BOM).
-    const VECTOR: &str = r#"{"display_name":"Test Agent","system_prompt":"You are a test assistant.","avatar_url":"https://example.com/avatar.png","runtime":"goose","model":"claude-opus-4","provider":"anthropic","name_pool":["Alpha","Beta"]}"#;
-
-    let content = PersonaEventContent {
-        display_name: "Test Agent".to_string(),
-        system_prompt: Some("You are a test assistant.".to_string()),
-        avatar_url: Some("https://example.com/avatar.png".to_string()),
-        runtime: Some("goose".to_string()),
-        model: Some("claude-opus-4".to_string()),
-        provider: Some("anthropic".to_string()),
-        name_pool: vec!["Alpha".to_string(), "Beta".to_string()],
-        respond_to: None,
-        respond_to_allowlist: Vec::new(),
-        parallelism: None,
-    };
-    assert_eq!(
-        serde_json::to_string(&content).unwrap(),
-        VECTOR,
-        "serialized content drifted from the NIP-AP Event 1 vector"
-    );
+fn legacy_content_round_trips_byte_for_byte() {
+    const LEGACY_VECTOR: &str = r#"{"display_name":"Test Agent","system_prompt":"You are a test assistant.","avatar_url":"https://example.com/avatar.png","runtime":"goose","model":"claude-opus-4","provider":"anthropic","name_pool":["Alpha","Beta"]}"#;
 
     // Hash invariance across the unified-model widening: REAL pre-revision
     // content bytes (fixture string, not a round-trip through the new
@@ -338,17 +314,17 @@ fn content_matches_nip_ap_vector() {
     // persona_content_hash — the drift-badge basis — is unchanged on
     // upgrade. A bare Option serializing "system_prompt":null would flip
     // every persona's hash fleet-wide.
-    let parsed: PersonaEventContent = serde_json::from_str(VECTOR).unwrap();
+    let parsed: PersonaEventContent = serde_json::from_str(LEGACY_VECTOR).unwrap();
     assert_eq!(
         serde_json::to_string(&parsed).unwrap(),
-        VECTOR,
+        LEGACY_VECTOR,
         "pre-revision content bytes must survive a parse/serialize round-trip unchanged"
     );
     assert_eq!(
         persona_content_hash(&parsed),
         {
             use sha2::{Digest, Sha256};
-            hex::encode(Sha256::digest(VECTOR.as_bytes()))
+            hex::encode(Sha256::digest(LEGACY_VECTOR.as_bytes()))
         },
         "persona_content_hash of pre-revision bytes must equal the direct digest"
     );
@@ -363,6 +339,33 @@ fn content_matches_nip_ap_vector() {
     const MINIMAL: &str = r#"{"display_name":"Minimal","system_prompt":"Hello."}"#;
     let parsed: PersonaEventContent = serde_json::from_str(MINIMAL).unwrap();
     assert_eq!(serde_json::to_string(&parsed).unwrap(), MINIMAL);
+}
+
+/// Current NIP-AP Event 1 body must serialize byte-for-byte in declaration
+/// order so cross-implementation event IDs remain stable.
+#[test]
+fn content_matches_current_nip_ap_event_1_vector() {
+    const VECTOR: &str = r#"{"display_name":"Test Agent","system_prompt":"You are a test assistant.","avatar_url":"https://example.com/avatar.png","runtime":"goose","model":"claude-opus-4","provider":"anthropic","name_pool":["Alpha","Beta"],"respond_to":"allowlist","respond_to_allowlist":["79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"],"parallelism":3}"#;
+
+    let content = PersonaEventContent {
+        display_name: "Test Agent".to_string(),
+        system_prompt: Some("You are a test assistant.".to_string()),
+        avatar_url: Some("https://example.com/avatar.png".to_string()),
+        runtime: Some("goose".to_string()),
+        model: Some("claude-opus-4".to_string()),
+        provider: Some("anthropic".to_string()),
+        name_pool: vec!["Alpha".to_string(), "Beta".to_string()],
+        respond_to: Some("allowlist".to_string()),
+        respond_to_allowlist: vec![
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798".to_string(),
+        ],
+        parallelism: Some(3),
+    };
+    assert_eq!(
+        serde_json::to_string(&content).unwrap(),
+        VECTOR,
+        "serialized content drifted from the current NIP-AP Event 1 vector"
+    );
 
     // An event built from this content carries the byte-exact vector as its
     // signed content, so a second implementer following the spec computes
@@ -383,9 +386,11 @@ fn content_matches_nip_ap_vector() {
         source_team_persona_slug: None,
         catalog_source: None,
         env_vars: BTreeMap::new(),
-        respond_to: None,
-        respond_to_allowlist: Vec::new(),
-        parallelism: None,
+        respond_to: Some("allowlist".to_string()),
+        respond_to_allowlist: vec![
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798".to_string(),
+        ],
+        parallelism: Some(3),
         created_at: "2025-01-01T00:00:00Z".to_string(),
         updated_at: "2025-01-01T00:00:00Z".to_string(),
     };

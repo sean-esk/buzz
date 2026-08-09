@@ -14,12 +14,13 @@ use crate::app_state::AppState;
 
 /// The JSON body stored in a persona event's content field.
 ///
-/// Field order MUST match the NIP-AP reference vectors (`docs/nips/NIP-AP.md`
-/// content body: `display_name, system_prompt, avatar_url, runtime, model,
-/// provider, name_pool`). serde emits fields in declaration order, so this
-/// order pins the exact content bytes and therefore the NIP-01 event id — a
-/// reorder here breaks cross-implementation interop. Guarded by
-/// `content_matches_nip_ap_vector`.
+/// Field order MUST match the current NIP-AP Event 1 reference vector
+/// (`docs/nips/NIP-AP.md` content body): `display_name, system_prompt,
+/// avatar_url, runtime, model, provider, name_pool, respond_to,
+/// respond_to_allowlist, parallelism`. serde emits fields in declaration
+/// order, so this order pins the exact content bytes and therefore the NIP-01
+/// event id — a reorder here breaks cross-implementation interop. Guarded by
+/// `content_matches_current_nip_ap_event_1_vector`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PersonaEventContent {
     pub display_name: String,
