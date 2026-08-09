@@ -35,6 +35,29 @@ export function isManagedAgentActive(agent: Pick<ManagedAgent, "status">) {
   return agent.status === "running" || agent.status === "deployed";
 }
 
+/**
+ * Describes the action required for a saved access-policy change to reach the
+ * live process. Provider deployments cannot be restarted by the local policy
+ * loop, while local agents can be restarted automatically only for a real
+ * running-process drift edge.
+ */
+export function accessChangeApplyMode(
+  agent: Pick<
+    ManagedAgent,
+    "autoRestartOnConfigChange" | "backend" | "needsRestart" | "status"
+  >,
+) {
+  if (agent.backend.type === "provider") return "redeploy-provider" as const;
+  if (
+    agent.status === "running" &&
+    agent.needsRestart &&
+    agent.autoRestartOnConfigChange
+  ) {
+    return "auto" as const;
+  }
+  return "manual-local" as const;
+}
+
 export function getManagedAgentPrimaryActionLabel(agent: ManagedAgent) {
   if (agent.backend.type === "provider") {
     return isManagedAgentActive(agent) ? "Shutdown" : "Deploy";

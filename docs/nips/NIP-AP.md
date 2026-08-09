@@ -192,9 +192,13 @@ to carry only instance-level state:
   from its definition at next spawn, but a definition-less one has no
   restore path.) This exception retires naturally once all instances are
   definition-backed.
-- Readers SHOULD continue to accept legacy "fat" kind:30177 events
-  during the transition. Where the linked 30175 head and a legacy 30177
-  event both carry a field, the 30175 head is authoritative.
+- Readers SHOULD continue to accept legacy "fat" kind:30177 events during
+  the transition. For definition-level fields (`system_prompt`, `model`,
+  `provider`, and `persona_source_version`), the linked 30175 head is
+  authoritative. For instance-level fields (`respond_to`,
+  `respond_to_allowlist`, and `parallelism`), the keyed 30177 projection is
+  authoritative after creation; the same-named 30175 values are defaults for
+  newly spawned instances only.
 - Deletion/retention rules for kind:30177 are unchanged so historical
   tombstones keep working.
 

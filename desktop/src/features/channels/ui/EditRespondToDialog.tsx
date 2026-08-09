@@ -2,7 +2,10 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { useUpdateManagedAgentMutation } from "@/features/agents/hooks";
-import { isManagedAgentActive } from "@/features/agents/lib/managedAgentControlActions";
+import {
+  accessChangeApplyMode,
+  isManagedAgentActive,
+} from "@/features/agents/lib/managedAgentControlActions";
 import { useAgentAccessOwnerOnlyQuery } from "@/features/agents/useAgentAccessOwnerOnly";
 import { runLocationForBackend } from "@/features/agents/lib/agentAccessWarning";
 import {
@@ -64,10 +67,13 @@ export function EditRespondToDialog({
     });
     onOpenChange(false);
     if (accessChanged && isManagedAgentActive(result.agent)) {
+      const applyMode = accessChangeApplyMode(result.agent);
       toast(
-        result.agent.autoRestartOnConfigChange
+        applyMode === "auto"
           ? "Access saved. Buzz will restart this agent after it is connected and idle for about three minutes."
-          : "Access saved. Use Restart Agent on the profile to apply it.",
+          : applyMode === "redeploy-provider"
+            ? "Access saved. Shut down and deploy this agent again to apply it."
+            : "Access saved. Use Restart Agent on the profile to apply it.",
       );
     }
   }

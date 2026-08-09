@@ -150,6 +150,14 @@ test("a provider-backed agent's warning names the server, not this computer", as
   );
   // The local wording must not leak into a remote-backed agent.
   await expect(warning).not.toContainText("your computer");
+
+  await page.getByRole("button", { name: "Save access" }).click();
+  await expect(
+    page.getByText(
+      "Access saved. Shut down and deploy this agent again to apply it.",
+    ),
+  ).toBeVisible();
+  await expect(page.getByTestId("restart-diff-badge")).toHaveCount(0);
 });
 
 test("persona-backed edit warns before saving open access", async ({

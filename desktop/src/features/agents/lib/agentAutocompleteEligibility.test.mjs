@@ -123,6 +123,33 @@ test("relayAgentIsSharedWithUser: accepts allowlist agents for the current user"
   );
 });
 
+test("relayAgentIsSharedWithUser: fails closed for unresolved directory policy", () => {
+  const agent = {
+    respondTo: "anyone",
+    respondToAllowlist: [],
+    channelIds: ["general"],
+  };
+
+  for (const directoryState of [
+    undefined,
+    "loading",
+    "error",
+    "incomplete",
+    "untrusted",
+    "absent",
+  ]) {
+    assert.equal(
+      relayAgentIsSharedWithUser(
+        { ...agent, directoryState },
+        new Set(["general"]),
+        CURRENT_PUBKEY,
+      ),
+      false,
+      `directory state ${directoryState ?? "undefined"} must fail closed`,
+    );
+  }
+});
+
 test("relayAgentCanRespondInChannel: requires exact channel membership and viewer access", () => {
   const agent = {
     respondTo: "allowlist",

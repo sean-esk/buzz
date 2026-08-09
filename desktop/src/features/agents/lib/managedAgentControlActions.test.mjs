@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  accessChangeApplyMode,
   startManagedAgentWithRules,
   respawnManagedAgentWithRules,
 } from "./managedAgentControlActions.ts";
@@ -79,6 +80,61 @@ test("ordinary local agents still start normally", async () => {
     },
   });
   assert.equal(calledWith, "deadbeef".repeat(8));
+});
+
+test("access changes describe the applicable lifecycle recovery", () => {
+  const cases = [
+    [
+      "running local agent with restart drift and auto-restart enabled",
+      {
+        status: "running",
+        needsRestart: true,
+        autoRestartOnConfigChange: true,
+      },
+      "auto",
+    ],
+    [
+      "running local agent with auto-restart disabled",
+      {
+        status: "running",
+        needsRestart: true,
+        autoRestartOnConfigChange: false,
+      },
+      "manual-local",
+    ],
+    [
+      "running local agent without a restart edge",
+      {
+        status: "running",
+        needsRestart: false,
+        autoRestartOnConfigChange: true,
+      },
+      "manual-local",
+    ],
+    [
+      "inactive local agent",
+      {
+        status: "stopped",
+        needsRestart: false,
+        autoRestartOnConfigChange: true,
+      },
+      "manual-local",
+    ],
+    [
+      "deployed provider agent",
+      {
+        status: "deployed",
+        needsRestart: false,
+        autoRestartOnConfigChange: true,
+        backend: { type: "provider", id: "blox", config: {} },
+      },
+      "redeploy-provider",
+    ],
+  ];
+
+  for (const [name, overrides, expected] of cases) {
+    assert.equal(accessChangeApplyMode(agent(overrides)), expected, name);
+  }
 });
 
 // --- respawnManagedAgentWithRules: stop→clear→start boundary tests -----------

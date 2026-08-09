@@ -444,4 +444,80 @@ test.describe("edit agent dialog", () => {
     await page.getByTestId("user-profile-edit-agent").click();
     await expect(page.locator("#agent-respond-to")).toHaveText("Anyone");
   });
+
+  test("manual restart guidance is shown when automatic restart is disabled", async ({
+    page,
+  }) => {
+    await installMockBridge(page, {
+      managedAgents: [
+        {
+          pubkey: AGENT_PUBKEY,
+          name: AGENT_NAME,
+          status: "running",
+          channelNames: ["agents"],
+          respondTo: "owner-only",
+          autoRestartOnConfigChange: false,
+        },
+      ],
+    });
+
+    await openEditDialog(page);
+    await pickDropdownOption(page, "agent-respond-to", "Anyone");
+    await page.getByTestId("edit-agent-dialog-submit").click();
+
+    await expect(
+      page.getByText(
+        "Access saved. Use Restart Agent on the profile to apply it.",
+      ),
+    ).toBeVisible();
+    await expect(page.getByTestId("restart-diff-badge")).toBeVisible();
+  });
+
+  test("unchanged access does not show lifecycle feedback or create restart drift", async ({
+    page,
+  }) => {
+    await installMockBridge(page, {
+      managedAgents: [
+        {
+          pubkey: AGENT_PUBKEY,
+          name: AGENT_NAME,
+          status: "running",
+          channelNames: ["agents"],
+          respondTo: "owner-only",
+        },
+      ],
+    });
+
+    await openEditDialog(page);
+    await page.getByTestId("edit-agent-dialog-submit").click();
+
+    await expect(page.getByTestId("edit-agent-dialog")).not.toBeVisible();
+    await expect(page.getByText(/^Access saved\./)).toHaveCount(0);
+    await expect(page.getByTestId("restart-diff-badge")).toHaveCount(0);
+  });
+
+  test("stopped agents offer an explicit start recovery after an access save", async ({
+    page,
+  }) => {
+    await installMockBridge(page, {
+      managedAgents: [
+        {
+          pubkey: AGENT_PUBKEY,
+          name: AGENT_NAME,
+          status: "stopped",
+          channelNames: ["agents"],
+          respondTo: "owner-only",
+        },
+      ],
+    });
+
+    await openEditDialog(page);
+    await pickDropdownOption(page, "agent-respond-to", "Anyone");
+    await page.getByTestId("edit-agent-dialog-submit").click();
+
+    await expect(
+      page.getByText(`${AGENT_NAME} saved while stopped.`),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start now" })).toBeVisible();
+  });
 });

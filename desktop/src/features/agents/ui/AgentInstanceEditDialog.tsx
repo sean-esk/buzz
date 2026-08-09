@@ -12,7 +12,10 @@ import {
   useUpdateManagedAgentMutation,
 } from "@/features/agents/hooks";
 import { useAgentAccessOwnerOnlyQuery } from "@/features/agents/useAgentAccessOwnerOnly";
-import { isManagedAgentActive } from "@/features/agents/lib/managedAgentControlActions";
+import {
+  accessChangeApplyMode,
+  isManagedAgentActive,
+} from "@/features/agents/lib/managedAgentControlActions";
 import type {
   ManagedAgent,
   RespondToMode,
@@ -736,12 +739,19 @@ export function AgentInstanceEditDialog({
       showAgentProfileSyncWarning(result.agent.name, result.profileSyncError);
       handleOpenChange(false);
       onUpdated?.(result.agent);
-      if (accessChanged && isManagedAgentActive(result.agent))
+      if (accessChanged && isManagedAgentActive(result.agent)) {
+        const applyMode = accessChangeApplyMode({
+          ...result.agent,
+          autoRestartOnConfigChange,
+        });
         toast(
-          autoRestartOnConfigChange
+          applyMode === "auto"
             ? "Access saved. Buzz will restart this agent after it is connected and idle for about three minutes."
-            : "Access saved. Use Restart Agent on the profile to apply it.",
+            : applyMode === "redeploy-provider"
+              ? "Access saved. Shut down and deploy this agent again to apply it."
+              : "Access saved. Use Restart Agent on the profile to apply it.",
         );
+      }
       // Stopped and failing agents need an explicit recovery path.
       if (!isManagedAgentActive(result.agent)) {
         const startedName = result.agent.name;

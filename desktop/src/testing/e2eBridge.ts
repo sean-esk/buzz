@@ -61,6 +61,7 @@ import type {
   RawInstallRuntimeResult,
   RuntimeFileConfigSubset,
 } from "@/shared/api/tauri";
+import type { RestartDiffEntry } from "@/shared/api/restartDiff";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import {
   isValidLinkPreviewSnapshotCanonicalUrl,
@@ -93,7 +94,7 @@ export type MockManagedAgentSeed = {
   lastError?: string | null;
   lastErrorCode?: number | null;
   needsRestart?: boolean;
-  restartDiff?: Array<{ field: string; change: unknown }>;
+  restartDiff?: RestartDiffEntry[];
   autoRestartOnConfigChange?: boolean;
   respondTo?: RawManagedAgent["respond_to"];
   respondToAllowlist?: string[];
@@ -857,7 +858,7 @@ type RawManagedAgent = {
   last_error: string | null;
   last_error_code: number | null;
   needs_restart?: boolean;
-  restart_diff?: Array<{ field: string; change: unknown }>;
+  restart_diff?: RestartDiffEntry[];
   log_path: string;
   start_on_app_launch: boolean;
   auto_restart_on_config_change?: boolean;
@@ -8714,12 +8715,40 @@ async function handleUpdateManagedAgent(args: {
   };
 }): Promise<{ agent: RawManagedAgent; profile_sync_error: string | null }> {
   const agent = getMockManagedAgent(args.input.pubkey);
+  const restartDiff: RestartDiffEntry[] = [];
   const accessChanged =
     (args.input.respondTo !== undefined &&
       args.input.respondTo !== agent.respond_to) ||
     (args.input.respondToAllowlist !== undefined &&
       args.input.respondToAllowlist.join(",") !==
         agent.respond_to_allowlist.join(","));
+  if (
+    args.input.respondTo !== undefined &&
+    args.input.respondTo !== agent.respond_to
+  ) {
+    restartDiff.push({
+      field: "respond_to",
+      change: {
+        kind: "value",
+        before: agent.respond_to,
+        after: args.input.respondTo,
+      },
+    });
+  }
+  if (
+    args.input.respondToAllowlist !== undefined &&
+    args.input.respondToAllowlist.join(",") !==
+      agent.respond_to_allowlist.join(",")
+  ) {
+    restartDiff.push({
+      field: "respond_to_allowlist",
+      change: {
+        kind: "value",
+        before: agent.respond_to_allowlist,
+        after: args.input.respondToAllowlist,
+      },
+    });
+  }
   if (args.input.name !== undefined) {
     agent.name = args.input.name;
   }
@@ -8740,10 +8769,12 @@ async function handleUpdateManagedAgent(args: {
   }
   if (
     accessChanged &&
-    (agent.status === "running" || agent.status === "deployed")
+    agent.backend.type === "local" &&
+    agent.status === "running" &&
+    restartDiff.length > 0
   ) {
     agent.needs_restart = true;
-    agent.restart_diff = [{ field: "access", change: "updated" }];
+    agent.restart_diff = restartDiff;
   }
   agent.updated_at = new Date().toISOString();
   return { agent: cloneManagedAgent(agent), profile_sync_error: null };

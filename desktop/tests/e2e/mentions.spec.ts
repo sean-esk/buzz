@@ -1023,6 +1023,29 @@ test("relay-only shared agents appear in forum mentions", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("unresolved relay agents stay hidden from forum mentions", async ({
+  page,
+}) => {
+  await installMockBridge(page, {
+    relayAgents: [
+      {
+        pubkey: ALLOWLIST_RELAY_AGENT_PUBKEY,
+        name: "quinn",
+        respondTo: "allowlist",
+        respondToAllowlist: [MOCK_VIEWER_PUBKEY],
+        channelNames: ["watercooler"],
+        directoryState: "incomplete",
+      },
+    ],
+  });
+  await page.goto("/");
+  await page.getByTestId("channel-watercooler").click();
+  await page.getByRole("button", { name: "Start a new post..." }).click();
+  await page.getByTestId("message-input").fill("@quinn");
+
+  await expect(autocomplete(page)).toHaveCount(0);
+});
+
 test("relay-only allowlisted agents are visible in channel mentions", async ({
   page,
 }) => {
