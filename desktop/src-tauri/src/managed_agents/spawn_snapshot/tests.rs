@@ -330,22 +330,22 @@ fn resnapshot_does_not_clobber_record_quad_with_definition_absent_quad() {
 
     let mut rec = record();
     rec.persona_id = Some("p1".into());
-    rec.respond_to = RespondTo::Allowlist;
-    rec.respond_to_allowlist = vec!["a".repeat(64)];
+    rec.respond_to = RespondTo::OwnerOnly;
     rec.parallelism = 4;
 
     let mut definition_with_quad = quadless_definition.clone();
     definition_with_quad[0].respond_to = Some("anyone".into());
     definition_with_quad[0].parallelism = Some(8);
 
+    let owner_only_snapshot = snapshot(
+        &rec,
+        &quadless_definition,
+        &[],
+        "wss://ws.example",
+        &Default::default(),
+    );
     assert_eq!(
-        snapshot(
-            &rec,
-            &quadless_definition,
-            &[],
-            "wss://ws.example",
-            &Default::default()
-        ),
+        owner_only_snapshot,
         snapshot(
             &rec,
             &definition_with_quad,
@@ -354,6 +354,27 @@ fn resnapshot_does_not_clobber_record_quad_with_definition_absent_quad() {
             &Default::default()
         ),
         "definition quad must not leak into the spawn snapshot of an existing instance"
+    );
+
+    rec.respond_to = RespondTo::Anyone;
+    let saved_anyone_snapshot = snapshot(
+        &rec,
+        &definition_with_quad,
+        &[],
+        "wss://ws.example",
+        &Default::default(),
+    );
+    assert_ne!(owner_only_snapshot, saved_anyone_snapshot);
+    assert_eq!(
+        saved_anyone_snapshot,
+        snapshot(
+            &rec,
+            &quadless_definition,
+            &[],
+            "wss://ws.example",
+            &Default::default(),
+        ),
+        "refreshing persona data must not restore the definition default"
     );
 }
 

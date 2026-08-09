@@ -90,23 +90,16 @@ The `content` field is a **plaintext** (unencrypted) JSON object:
 | `model` | string \| null | `null` | Model identifier (e.g. `"claude-opus-4"`). |
 | `provider` | string \| null | `null` | Model provider (e.g. `"anthropic"`). |
 | `name_pool` | string[] | `[]` | Pool of display names for agent instances spawned from this definition. When non-empty, the spawning system picks a name from this pool for each new agent instance, enabling multiple concurrent agents from the same definition to have distinct identities. |
-| `respond_to` | string \| null | `null` | **Reserved.** Default respond-to policy for instances spawned from this definition: `"anyone"`, `"owner-only"`, or `"allowlist"`. `null` defers to the client default. |
-| `respond_to_allowlist` | string[] | `[]` | **Reserved.** Allowlisted author pubkeys (64-char lowercase hex) when `respond_to` is `"allowlist"`. Ignored otherwise. |
-| `parallelism` | integer \| null | `null` | **Reserved.** Default max concurrent turns for spawned instances. `null` defers to the client default. |
+| `respond_to` | string \| null | `null` | Default respond-to policy for instances spawned from this definition: `"anyone"`, `"owner-only"`, or `"allowlist"`. `null` defers to the client default. |
+| `respond_to_allowlist` | string[] | `[]` | Allowlisted author pubkeys (64-char lowercase hex) when `respond_to` is `"allowlist"`. Ignored otherwise. |
+| `parallelism` | integer \| null | `null` | Default max concurrent turns for spawned instances. `null` defers to the client default. |
 
-The behavioral fields (`respond_to`, `respond_to_allowlist`,
-`parallelism`) are definition-level *defaults*: a spawned instance copies them
-at creation and may be reconfigured independently afterwards. They were
-previously carried only on the kind:30177 projection (see
-"Slimming: kind:30177" below).
-
-**Status: reserved.** In the current implementation these behavioral fields are
-*parsed but not yet applied*: readers tolerate and preserve them at the wire
-layer, but the local definition store does not yet carry them and writers do
-not emit them. The instance-copy-at-creation behavior activates in a
-subsequent release (the create-path unification). Until then a definition
-carrying these fields round-trips through the wire type but the values do not
-survive a local edit-and-republish cycle.
+The values of the behavioral fields (`respond_to`, `respond_to_allowlist`,
+`parallelism`) on kind:30175 are definition-level *defaults*, copied only when
+an instance is created. Editing a definition never overwrites an existing
+instance's independently editable values. After creation, the instance's
+same-named authoritative kind:30177 fields are independent state and MUST
+continue to be published in its keyed event (see "Slimming: kind:30177" below).
 
 Unknown fields MUST be ignored by readers (forward compatibility).
 
@@ -199,9 +192,13 @@ to carry only instance-level state:
   from its definition at next spawn, but a definition-less one has no
   restore path.) This exception retires naturally once all instances are
   definition-backed.
-- Readers SHOULD continue to accept legacy "fat" kind:30177 events
-  during the transition. Where the linked 30175 head and a legacy 30177
-  event both carry a field, the 30175 head is authoritative.
+- Readers SHOULD continue to accept legacy "fat" kind:30177 events during
+  the transition. For definition-level fields (`system_prompt`, `model`,
+  `provider`, and `persona_source_version`), the linked 30175 head is
+  authoritative. For instance-level fields (`respond_to`,
+  `respond_to_allowlist`, and `parallelism`), the keyed 30177 projection is
+  authoritative after creation; the same-named 30175 values are defaults for
+  newly spawned instances only.
 - Deletion/retention rules for kind:30177 are unchanged so historical
   tombstones keep working.
 
@@ -321,7 +318,7 @@ pubkey_o = 79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798
 
 ```jsonc
 // Body (exact UTF-8, no trailing whitespace):
-{"display_name":"Test Agent","system_prompt":"You are a test assistant.","avatar_url":"https://example.com/avatar.png","runtime":"goose","model":"claude-opus-4","provider":"anthropic","name_pool":["Alpha","Beta"]}
+{"display_name":"Test Agent","system_prompt":"You are a test assistant.","avatar_url":"https://example.com/avatar.png","runtime":"goose","model":"claude-opus-4","provider":"anthropic","name_pool":["Alpha","Beta"],"respond_to":"allowlist","respond_to_allowlist":["79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"],"parallelism":3}
 ```
 
 ```
@@ -329,7 +326,7 @@ kind            = 30175
 pubkey          = 79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798
 created_at      = 1700000000
 tags            = [["d", "test-agent"]]
-content         = {"display_name":"Test Agent","system_prompt":"You are a test assistant.","avatar_url":"https://example.com/avatar.png","runtime":"goose","model":"claude-opus-4","provider":"anthropic","name_pool":["Alpha","Beta"]}
+content         = {"display_name":"Test Agent","system_prompt":"You are a test assistant.","avatar_url":"https://example.com/avatar.png","runtime":"goose","model":"claude-opus-4","provider":"anthropic","name_pool":["Alpha","Beta"],"respond_to":"allowlist","respond_to_allowlist":["79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"],"parallelism":3}
 id              = <derived per NIP-01: sha256([0, pubkey, created_at, kind, tags, content])>
 sig             = <BIP-340 Schnorr signature with aux=0x00…00>
 ```

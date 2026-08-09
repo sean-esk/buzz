@@ -177,15 +177,6 @@ export function useMentions(
     () => relayAgentDirectoryByPubkey(relayAgentsQuery.data),
     [relayAgentsQuery.data],
   );
-  const directoryAgentPubkeys = React.useMemo(
-    () =>
-      new Set(
-        (relayAgentsQuery.data ?? []).map((agent) =>
-          normalizePubkey(agent.pubkey),
-        ),
-      ),
-    [relayAgentsQuery.data],
-  );
   const sharedChannelIds = React.useMemo(
     () => getSharedChannelIds(channelsQuery.data),
     [channelsQuery.data],
@@ -255,11 +246,8 @@ export function useMentions(
       if (
         shouldHideAgentFromMentions({
           isAgent: candidate.isAgent === true,
-          isMember: candidate.isMember === true,
           pubkey,
           mentionableAgentPubkeys,
-          directoryAgentPubkeys,
-          relayDirectorySettled,
         })
       ) {
         return;
@@ -421,7 +409,6 @@ export function useMentions(
     userSearchResults,
     canSearchGlobalUsers,
     currentPubkey,
-    directoryAgentPubkeys,
     isArchivedDiscovery,
     managedAgentNamesByPubkey,
     managedAgentPersonaIds,
@@ -433,7 +420,6 @@ export function useMentions(
     personaNameByPubkey,
     profiles,
     relayAgentDirectory,
-    relayDirectorySettled,
     relayAgentsQuery.data,
   ]);
 

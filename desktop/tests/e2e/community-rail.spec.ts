@@ -151,7 +151,7 @@ test.describe("community rail", () => {
       page.getByRole("dialog", { name: "Edit Community" }),
     ).toBeVisible();
     await expect(page.getByTestId("community-icon-settings")).toBeVisible();
-    await page.mouse.click(0, 0);
+    await page.keyboard.press("Escape");
 
     await expect(
       page.getByRole("dialog", { name: "Edit Community" }),
@@ -344,7 +344,6 @@ test.describe("community rail", () => {
       )
       .toEqual({ text: COMMUNITY_A.relayUrl });
 
-    await page.getByTestId("community-switcher").click();
     await menu.getByRole("menuitem", { name: "Community settings" }).click();
     await expect(
       page.getByRole("dialog", { name: "Edit Community" }),

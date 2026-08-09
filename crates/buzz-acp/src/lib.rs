@@ -4872,6 +4872,23 @@ mod author_gate_tests {
     }
 
     #[tokio::test]
+    async fn test_anyone_admits_stranger_in_an_ordinary_channel() {
+        let cache = cache_with_sibling();
+        assert!(
+            author_allowed(
+                &RespondTo::Anyone,
+                &HashSet::new(),
+                STRANGER,
+                false,
+                &cache,
+                &dummy_rest_client()
+            )
+            .await,
+            "respond_to=anyone must admit a stranger outside DMs"
+        );
+    }
+
+    #[tokio::test]
     async fn test_owner_only_admits_owner_and_sibling_to_steer() {
         let cache = cache_with_sibling();
         for (who, label) in [(OWNER, "owner"), (SIBLING, "sibling")] {

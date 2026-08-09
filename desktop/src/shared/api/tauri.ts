@@ -1053,14 +1053,8 @@ export type BakedEnvEntry = {
   masked: boolean;
 };
 
-/**
- * Return the baked build env entries with values shown (masked where
- * appropriate) for display in the Agent defaults card.
- *
- * Provider and model arrive as `BUZZ_AGENT_PROVIDER` / `BUZZ_AGENT_MODEL`
- * keys and are included in the list alongside other baked vars.
- *
- * OSS builds return an empty array — the baked-env section is hidden.
+/** Returns baked build env entries (masked where appropriate) for Agent defaults.
+ * Provider/model arrive as `BUZZ_AGENT_PROVIDER` / `BUZZ_AGENT_MODEL`; OSS builds return none.
  */
 export async function getBakedBuildEnv(): Promise<BakedEnvEntry[]> {
   return invokeTauri<BakedEnvEntry[]>("get_baked_build_env");
@@ -1071,9 +1065,14 @@ type RawUpdateManagedAgentResponse = {
   profile_sync_error: string | null;
 };
 
+export type UpdateManagedAgentResponse = {
+  agent: ManagedAgent;
+  profileSyncError: string | null;
+};
+
 export async function updateManagedAgent(
   input: UpdateManagedAgentInput,
-): Promise<{ agent: ManagedAgent; profileSyncError: string | null }> {
+): Promise<UpdateManagedAgentResponse> {
   const response = await invokeTauri<RawUpdateManagedAgentResponse>(
     "update_managed_agent",
     { input },

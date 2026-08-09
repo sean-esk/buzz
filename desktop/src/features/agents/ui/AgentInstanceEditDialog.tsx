@@ -8,11 +8,15 @@ import {
   useAgentConfigSurface,
   useBakedBuildEnvKeysQuery,
   usePersonasQuery,
+  useSetManagedAgentAutoRestartMutation,
   useStartManagedAgentMutation,
   useUpdateManagedAgentMutation,
 } from "@/features/agents/hooks";
 import { useAgentAccessOwnerOnlyQuery } from "@/features/agents/useAgentAccessOwnerOnly";
-import { isManagedAgentActive } from "@/features/agents/lib/managedAgentControlActions";
+import {
+  accessChangeApplyMode,
+  isManagedAgentActive,
+} from "@/features/agents/lib/managedAgentControlActions";
 import type {
   ManagedAgent,
   RespondToMode,
@@ -24,7 +28,6 @@ import { Button } from "@/shared/ui/button";
 import { ChooserDialogContent } from "@/shared/ui/chooser-dialog-content";
 import { Dialog } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
-import { setManagedAgentAutoRestart } from "@/shared/api/tauriManagedAgents";
 import { EditAgentAdvancedFields } from "./EditAgentAdvancedFields";
 import {
   ADVANCED_FIELDS_MOTION_TRANSITION,
@@ -90,6 +93,11 @@ import { resolveModelFieldStatusMessage } from "./agentConfigControls";
 import { AdvancedRequiredBadge } from "./AdvancedRequiredBadge";
 import { showAgentProfileSyncWarning } from "./agentProfileSyncWarning";
 import { AddCustomHarnessDialog } from "./AddCustomHarnessDialog";
+import { saveAgentInstance } from "./agentInstanceSave";
+import {
+  reportAgentInstanceSaveFlowError,
+  reportAutoRestartPreferenceError,
+} from "./agentInstanceSaveFeedback";
 import {
   ADD_CUSTOM_HARNESS_OPTION,
   runtimeDropdownAction,
@@ -114,11 +122,11 @@ export function AgentInstanceEditDialog({
   onUpdated?: (agent: ManagedAgent) => void;
 }) {
   const updateMutation = useUpdateManagedAgentMutation();
+  const setAutoRestartMutation = useSetManagedAgentAutoRestartMutation();
   const startMutation = useStartManagedAgentMutation();
   const runtimesQuery = useAcpRuntimesQuery({ enabled: open });
   const configSurfaceQuery = useAgentConfigSurface(open ? agent.pubkey : null);
   const runtimes = runtimesQuery.data ?? [];
-
   const [name, setName] = React.useState(agent.name);
   const [aiDefaultsOpen, setAiDefaultsOpen] = React.useState(false);
   const aiDefaultsTriggerRef = React.useRef<HTMLButtonElement>(null);
@@ -628,9 +636,6 @@ export function AgentInstanceEditDialog({
       // requires one) and a deliberate local model still wins.
       const normalizedModel = inheritedSubmission.model;
 
-      // Harness pin resolution — see resolveAgentCommandUpdate for the full
-      // sentinel/pin/no-op contract, including the inherit→pin transition where
-      // the prefilled command equals the original but must still be pinned.
       const agentCommandUpdate = resolveAgentCommandUpdate({
         inheritHarness,
         agentCommand,
@@ -651,9 +656,6 @@ export function AgentInstanceEditDialog({
         runtimeSupportsLlmProviderSelection(prospectiveRuntimeId),
       );
 
-      // Provider + env to persist — the shared inherited-submission snapshot
-      // (same values the credential gate validates), so gate ↔ record ↔ spawn
-      // all agree. See resolveInheritedRuntimeSubmission.
       const normalizedSubmitProvider = inheritedSubmission.provider;
       const submitEnvVars = inheritedSubmission.envVars;
       const input: UpdateManagedAgentInput = {
@@ -666,10 +668,6 @@ export function AgentInstanceEditDialog({
             ? acpCommand.trim()
             : undefined,
         agentCommand: agentCommandUpdate,
-        // A non-inheriting selection is a deliberate pin — signal it so the
-        // backend preserves a Custom/runtime command even when it maps to the
-        // linked persona's own runtime (otherwise it would be dropped back to
-        // inherit). Omitted (falsy) when inheriting or on a name-only edit.
         harnessOverride:
           agentCommandUpdate != null ? !inheritHarness : undefined,
         agentArgs:
@@ -680,7 +678,6 @@ export function AgentInstanceEditDialog({
           parsedParallelism > 0 && parsedParallelism !== agent.parallelism
             ? parsedParallelism
             : undefined,
-        // Linked instances defer model/provider/systemPrompt to the definition.
         systemPrompt:
           linkedPersona != null
             ? undefined
@@ -693,11 +690,8 @@ export function AgentInstanceEditDialog({
             : normalizedModel !== (agent.model ?? null)
               ? normalizedModel
               : undefined,
-        // Tri-state provider persistence keyed on providerRuntimeCapability:
-        //   "capable"  → persist: value if changed, omit if unchanged.
-        //   "locked"   → clear: send null if provider was set, else omit.
-        //   "unknown"  → omit always (never send null for a transient state).
-        // llmProviderFieldVisible is for UX visibility only; not used here.
+        // Persist only known-capable changes; clear only known locked runtimes.
+        // Unknown transient state always omits the provider.
         provider:
           linkedPersona != null
             ? undefined
@@ -714,42 +708,49 @@ export function AgentInstanceEditDialog({
           ? undefined
           : submitEnvVars,
         respondTo: respondTo !== agent.respondTo ? respondTo : undefined,
-        // The allowlist is preserved across mode toggles in local UI state
-        // (so a user can flip away from allowlist and back without losing
-        // their entries), but we only send it on the wire when (a) it
-        // actually changed, AND (b) the saved mode will need it. Sending
-        // an allowlist while switching to a non-allowlist mode would be
-        // harmless server-side, but it's noise in the persisted record.
+        // Allowlist changes are sent only while allowlist mode is active; omission preserves the stored list when switching modes.
         respondToAllowlist:
           respondTo === "allowlist" &&
           respondToAllowlist.join(",") !== agent.respondToAllowlist.join(",")
             ? respondToAllowlist
             : undefined,
       };
-
-      const result = await updateMutation.mutateAsync(input);
-      if (autoRestartOnConfigChange !== agent.autoRestartOnConfigChange) {
-        // Standalone setter (mirrors start-on-app-launch) — not part of
-        // UpdateManagedAgentInput, so the frozen update shape stays frozen.
-        await setManagedAgentAutoRestart(
-          agent.pubkey,
-          autoRestartOnConfigChange,
-        );
-      }
+      const accessChanged =
+        input.respondTo !== undefined || input.respondToAllowlist !== undefined;
+      const saved = await saveAgentInstance({
+        agent,
+        autoRestartOnConfigChange,
+        input,
+        setAutoRestart: setAutoRestartMutation.mutateAsync,
+        update: updateMutation.mutateAsync,
+        onAutoRestartPreferenceError: (error) =>
+          reportAutoRestartPreferenceError(agent.pubkey, error),
+      });
+      if (!saved) return;
+      const { result, savedAgent } = saved;
       showAgentProfileSyncWarning(result.agent.name, result.profileSyncError);
       handleOpenChange(false);
-      onUpdated?.(result.agent);
-      // The auto-restart policy deliberately never fires for a stopped or
-      // failing agent (a broken agent must not auto-loop), so an edit meant
-      // to FIX one silently waits for a manual start. Offer that start
-      // explicitly instead of relying on the user to know the policy.
-      if (!isManagedAgentActive(result.agent)) {
-        const startedName = result.agent.name;
+      onUpdated?.(savedAgent);
+      if (accessChanged && isManagedAgentActive(savedAgent)) {
+        const applyMode = accessChangeApplyMode({
+          ...savedAgent,
+          autoRestartOnConfigChange: savedAgent.autoRestartOnConfigChange,
+        });
+        toast(
+          applyMode === "auto"
+            ? "Access saved. Buzz will restart this agent after it is connected and idle for about three minutes."
+            : applyMode === "redeploy-provider"
+              ? "Access saved. Shut down and deploy this agent again to apply it."
+              : "Access saved. Use Restart Agent on the profile to apply it.",
+        );
+      }
+      if (!isManagedAgentActive(savedAgent)) {
+        const startedName = savedAgent.name;
         toast(`${startedName} saved while stopped.`, {
           action: {
             label: "Start now",
             onClick: () => {
-              startMutation.mutate(result.agent.pubkey, {
+              startMutation.mutate(savedAgent.pubkey, {
                 onSuccess: () => toast.success(`${startedName} started.`),
                 onError: (error) =>
                   toast.error(
@@ -762,12 +763,11 @@ export function AgentInstanceEditDialog({
           },
         });
       }
-    } catch {
-      // React Query stores the error; keep dialog open and render it inline.
+    } catch (error: unknown) {
+      reportAgentInstanceSaveFlowError(agent.pubkey, error);
     }
   }
 
-  // Model and provider field derived state
   const normalizedConfig = configSurfaceQuery.data?.normalized;
   const modelRequired = isMissingRequiredDropdownField(
     normalizedConfig?.model,

@@ -61,6 +61,7 @@ import type {
   RawInstallRuntimeResult,
   RuntimeFileConfigSubset,
 } from "@/shared/api/tauri";
+import type { RestartDiffEntry } from "@/shared/api/restartDiff";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import {
   isValidLinkPreviewSnapshotCanonicalUrl,
@@ -93,7 +94,7 @@ export type MockManagedAgentSeed = {
   lastError?: string | null;
   lastErrorCode?: number | null;
   needsRestart?: boolean;
-  restartDiff?: Array<{ field: string; change: unknown }>;
+  restartDiff?: RestartDiffEntry[];
   autoRestartOnConfigChange?: boolean;
   respondTo?: RawManagedAgent["respond_to"];
   respondToAllowlist?: string[];
@@ -332,6 +333,10 @@ type E2eConfig = {
     sendMessageErrors?: string[];
     /** Reject successive managed-agent starts, then resume. */
     startManagedAgentErrors?: string[];
+    /** Reject successive managed-agent updates, then resume. */
+    updateManagedAgentErrors?: string[];
+    /** Reject successive automatic-restart preference writes, then resume. */
+    setManagedAgentAutoRestartErrors?: string[];
     /** Delay (ms) after snapshotting a thread-replies page so E2E tests can
      *  deliver live reply/aux events while an older response is in flight. */
     threadRepliesDelayMs?: number;
@@ -857,7 +862,7 @@ type RawManagedAgent = {
   last_error: string | null;
   last_error_code: number | null;
   needs_restart?: boolean;
-  restart_diff?: Array<{ field: string; change: unknown }>;
+  restart_diff?: RestartDiffEntry[];
   log_path: string;
   start_on_app_launch: boolean;
   auto_restart_on_config_change?: boolean;
@@ -8611,6 +8616,8 @@ async function handleStartManagedAgent(
   agent.updated_at = now;
   agent.last_started_at = now;
   agent.last_error = null;
+  agent.needs_restart = false;
+  agent.restart_diff = [];
   setMockPresenceStatus(agent.pubkey, "online");
   agent.log_lines.push(
     agent.backend.type === "provider"
@@ -8678,10 +8685,18 @@ async function handleSetManagedAgentStartOnAppLaunch(args: {
   return cloneManagedAgent(agent);
 }
 
-async function handleSetManagedAgentAutoRestart(args: {
-  pubkey: string;
-  autoRestartOnConfigChange: boolean;
-}): Promise<RawManagedAgent> {
+async function handleSetManagedAgentAutoRestart(
+  args: {
+    pubkey: string;
+    autoRestartOnConfigChange: boolean;
+  },
+  config?: E2eConfig,
+): Promise<RawManagedAgent> {
+  const autoRestartError =
+    config?.mock?.setManagedAgentAutoRestartErrors?.shift();
+  if (autoRestartError) {
+    throw new Error(autoRestartError);
+  }
   const agent = getMockManagedAgent(args.pubkey);
   agent.auto_restart_on_config_change = args.autoRestartOnConfigChange;
   agent.updated_at = new Date().toISOString();
@@ -8700,18 +8715,59 @@ async function handleGetManagedAgentLog(args: {
   };
 }
 
-async function handleUpdateManagedAgent(args: {
-  input: {
-    pubkey: string;
-    name?: string;
-    model?: string | null;
-    systemPrompt?: string | null;
-    envVars?: Record<string, string>;
-    respondTo?: "owner-only" | "allowlist" | "anyone";
-    respondToAllowlist?: string[];
-  };
-}): Promise<{ agent: RawManagedAgent; profile_sync_error: string | null }> {
+async function handleUpdateManagedAgent(
+  args: {
+    input: {
+      pubkey: string;
+      name?: string;
+      model?: string | null;
+      systemPrompt?: string | null;
+      envVars?: Record<string, string>;
+      respondTo?: "owner-only" | "allowlist" | "anyone";
+      respondToAllowlist?: string[];
+    };
+  },
+  config?: E2eConfig,
+): Promise<{ agent: RawManagedAgent; profile_sync_error: string | null }> {
+  const updateError = config?.mock?.updateManagedAgentErrors?.shift();
+  if (updateError) {
+    throw new Error(updateError);
+  }
   const agent = getMockManagedAgent(args.input.pubkey);
+  const restartDiff: RestartDiffEntry[] = [];
+  const accessChanged =
+    (args.input.respondTo !== undefined &&
+      args.input.respondTo !== agent.respond_to) ||
+    (args.input.respondToAllowlist !== undefined &&
+      args.input.respondToAllowlist.join(",") !==
+        agent.respond_to_allowlist.join(","));
+  if (
+    args.input.respondTo !== undefined &&
+    args.input.respondTo !== agent.respond_to
+  ) {
+    restartDiff.push({
+      field: "respond_to",
+      change: {
+        kind: "value",
+        before: agent.respond_to,
+        after: args.input.respondTo,
+      },
+    });
+  }
+  if (
+    args.input.respondToAllowlist !== undefined &&
+    args.input.respondToAllowlist.join(",") !==
+      agent.respond_to_allowlist.join(",")
+  ) {
+    restartDiff.push({
+      field: "respond_to_allowlist",
+      change: {
+        kind: "value",
+        before: agent.respond_to_allowlist,
+        after: args.input.respondToAllowlist,
+      },
+    });
+  }
   if (args.input.name !== undefined) {
     agent.name = args.input.name;
   }
@@ -8729,6 +8785,15 @@ async function handleUpdateManagedAgent(args: {
   }
   if (args.input.respondToAllowlist !== undefined) {
     agent.respond_to_allowlist = args.input.respondToAllowlist;
+  }
+  if (
+    accessChanged &&
+    agent.backend.type === "local" &&
+    agent.status === "running" &&
+    restartDiff.length > 0
+  ) {
+    agent.needs_restart = true;
+    agent.restart_diff = restartDiff;
   }
   agent.updated_at = new Date().toISOString();
   return { agent: cloneManagedAgent(agent), profile_sync_error: null };
@@ -12294,6 +12359,7 @@ export function maybeInstallE2eTauriMocks() {
       case "set_managed_agent_auto_restart":
         return handleSetManagedAgentAutoRestart(
           payload as Parameters<typeof handleSetManagedAgentAutoRestart>[0],
+          activeConfig,
         );
       case "set_managed_agent_start_on_app_launch":
         return handleSetManagedAgentStartOnAppLaunch(
@@ -12503,6 +12569,7 @@ export function maybeInstallE2eTauriMocks() {
       case "update_managed_agent":
         return handleUpdateManagedAgent(
           payload as Parameters<typeof handleUpdateManagedAgent>[0],
+          activeConfig,
         );
       case "create_channel":
         return handleCreateChannel(

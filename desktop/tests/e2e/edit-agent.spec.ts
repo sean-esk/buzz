@@ -36,6 +36,19 @@ const AGENT_PUBKEY = TEST_IDENTITIES.tyler.pubkey;
 const AGENT_NAME = "Tyler Agent";
 const PERSONA_ID = "persona-edit-e2e";
 
+function managedAgentWriteCommands(
+  commands: ReadonlyArray<{ command: string; payload: unknown }>,
+  start: number,
+) {
+  return commands
+    .slice(start)
+    .filter(
+      (entry) =>
+        entry.command === "update_managed_agent" ||
+        entry.command === "set_managed_agent_auto_restart",
+    );
+}
+
 /**
  * Open the Edit Agent dialog for the seeded managed agent via the profile
  * panel (agents view → agent card → Edit quick action) — EditAgentDialog's
@@ -79,6 +92,24 @@ async function pickDropdownOption(
 }
 
 test.describe("agent definition dialog", () => {
+  test("Advanced visibly explains that access applies only to new instances", async ({
+    page,
+  }) => {
+    await installMockBridge(page);
+    await page.goto("/");
+    await page.getByTestId("open-agents-view").click();
+    await page.getByTestId("new-agent-card").click();
+
+    const dialog = page.getByTestId("persona-dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Advanced", exact: true }).click();
+    await expect(
+      dialog.getByText(
+        "Default for new instances. Existing instances keep their own access setting.",
+      ),
+    ).toBeVisible();
+  });
+
   test("owner-only-access build shows disabled agent access with an explanation", async ({
     page,
   }) => {
@@ -352,24 +383,22 @@ test.describe("edit agent dialog", () => {
     ).toBeVisible();
   });
 
-  test("profile Edit routes persona-linked agents to the definition editor", async ({
+  test("profile Edit routes persona-linked agents to the live instance editor", async ({
     page,
   }) => {
-    // Routing pin for handleEditAgent (UserProfilePanel): when the agent has
-    // a resolvable non-built-in persona, the Edit quick action opens the
-    // DEFINITION editor (persona dialog), not EditAgentDialog. The instance
-    // editor (and its inherit-runtime toggle) is reachable for persona-linked
-    // agents only via the requestOpenEditAgent event (ConfigNudgeCard) — no
-    // plain UI path — so its inherit-toggle behavior is covered by B3b's
-    // component-level pinning test, not e2e.
+    // The live instance is authoritative for access, even when it inherits
+    // its configuration from a linked definition. This fixture deliberately
+    // disagrees so the profile action cannot accidentally seed from persona
+    // defaults again.
     await installMockBridge(page, {
       managedAgents: [
         {
           pubkey: AGENT_PUBKEY,
           name: AGENT_NAME,
           personaId: PERSONA_ID,
-          status: "stopped",
+          status: "running",
           channelNames: ["agents"],
+          respondTo: "owner-only",
         },
       ],
       personas: [
@@ -377,6 +406,7 @@ test.describe("edit agent dialog", () => {
           id: PERSONA_ID,
           displayName: "Edit E2E Persona",
           systemPrompt: "You are the edit-agent e2e persona.",
+          behavior: { respondTo: "anyone", respondToAllowlist: [] },
         },
       ],
     });
@@ -396,14 +426,271 @@ test.describe("edit agent dialog", () => {
     });
     await page.getByTestId("user-profile-edit-agent").click();
 
-    // Definition editor opens; the instance editor does not.
-    await expect(page.getByTestId("persona-dialog")).toBeVisible({
+    await expect(page.getByTestId("edit-agent-dialog")).toBeVisible({
       timeout: 10_000,
     });
-    await expect(page.getByTestId("edit-agent-dialog")).not.toBeVisible();
-    // And it is the persona's record that's being edited.
-    await expect(page.locator("#persona-display-name")).toHaveValue(
-      "Edit E2E Persona",
+    await expect(page.getByTestId("persona-dialog")).not.toBeVisible();
+    await expect(page.locator("#agent-respond-to")).toHaveText(
+      "Only me (default)",
     );
+    await expect(page.getByTestId("agent-access-warning")).not.toBeVisible();
+
+    const commandLogStart = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__?.length ?? 0,
+    );
+    await pickDropdownOption(page, "agent-respond-to", "Anyone");
+    await page.getByTestId("edit-agent-dialog-submit").click();
+    await expect(
+      page.getByText(
+        "Access saved. Buzz will restart this agent after it is connected and idle for about three minutes.",
+      ),
+    ).toBeVisible();
+    await expect
+      .poll(async () =>
+        page.evaluate((start) => {
+          const commands = window.__BUZZ_E2E_COMMAND_LOG__ ?? [];
+          return commands
+            .slice(start)
+            .some(
+              (entry) =>
+                entry.command === "update_managed_agent" &&
+                (entry.payload as { input?: { respondTo?: string } })?.input
+                  ?.respondTo === "anyone",
+            );
+        }, commandLogStart),
+      )
+      .toBe(true);
+    const commands = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__ ?? [],
+    );
+    expect(
+      commands
+        .slice(commandLogStart)
+        .some((entry) => entry.command === "update_persona"),
+    ).toBe(false);
+    await expect(page.getByTestId("restart-diff-badge")).toBeVisible();
+
+    await page.getByTestId("user-profile-agent-restart").click();
+    await expect(page.getByTestId("restart-diff-badge")).not.toBeVisible();
+    await page.getByTestId("user-profile-edit-agent").click();
+    await expect(page.locator("#agent-respond-to")).toHaveText("Anyone");
+  });
+
+  test("manual restart guidance is shown when automatic restart is disabled", async ({
+    page,
+  }) => {
+    await installMockBridge(page, {
+      managedAgents: [
+        {
+          pubkey: AGENT_PUBKEY,
+          name: AGENT_NAME,
+          status: "running",
+          channelNames: ["agents"],
+          respondTo: "owner-only",
+          autoRestartOnConfigChange: false,
+        },
+      ],
+    });
+
+    await openEditDialog(page);
+    await pickDropdownOption(page, "agent-respond-to", "Anyone");
+    await page.getByTestId("edit-agent-dialog-submit").click();
+
+    await expect(
+      page.getByText(
+        "Access saved. Use Restart Agent on the profile to apply it.",
+      ),
+    ).toBeVisible();
+    await expect(page.getByTestId("restart-diff-badge")).toBeVisible();
+  });
+
+  test("unchanged access does not show lifecycle feedback or create restart drift", async ({
+    page,
+  }) => {
+    await installMockBridge(page, {
+      managedAgents: [
+        {
+          pubkey: AGENT_PUBKEY,
+          name: AGENT_NAME,
+          status: "running",
+          channelNames: ["agents"],
+          respondTo: "owner-only",
+        },
+      ],
+    });
+
+    await openEditDialog(page);
+    const commandLogStart = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__?.length ?? 0,
+    );
+    await page.getByTestId("edit-agent-dialog-submit").click();
+
+    await expect(page.getByTestId("edit-agent-dialog")).not.toBeVisible();
+    await expect(page.getByText(/^Access saved\./)).toHaveCount(0);
+    await expect(page.getByTestId("restart-diff-badge")).toHaveCount(0);
+    const commands = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__ ?? [],
+    );
+    expect(
+      managedAgentWriteCommands(commands, commandLogStart).map(
+        (entry) => entry.command,
+      ),
+    ).toEqual(["update_managed_agent"]);
+  });
+
+  test("stopped agents offer an explicit start recovery after an access save", async ({
+    page,
+  }) => {
+    await installMockBridge(page, {
+      managedAgents: [
+        {
+          pubkey: AGENT_PUBKEY,
+          name: AGENT_NAME,
+          status: "stopped",
+          channelNames: ["agents"],
+          respondTo: "owner-only",
+        },
+      ],
+    });
+
+    await openEditDialog(page);
+    await pickDropdownOption(page, "agent-respond-to", "Anyone");
+    await page.getByTestId("edit-agent-dialog-submit").click();
+
+    await expect(
+      page.getByText(`${AGENT_NAME} saved while stopped.`),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start now" })).toBeVisible();
+  });
+
+  test("reports partial success when the automatic restart preference write fails", async ({
+    page,
+  }) => {
+    await installMockBridge(page, {
+      setManagedAgentAutoRestartErrors: [
+        "Mock automatic restart write failed.",
+      ],
+      managedAgents: [
+        {
+          pubkey: AGENT_PUBKEY,
+          name: AGENT_NAME,
+          status: "running",
+          channelNames: ["agents"],
+          respondTo: "owner-only",
+          autoRestartOnConfigChange: true,
+        },
+      ],
+    });
+
+    await openEditDialog(page);
+    const commandLogStart = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__?.length ?? 0,
+    );
+    await page.getByRole("button", { name: "Advanced", exact: true }).click();
+    await page.locator("#edit-agent-auto-restart").uncheck();
+    await pickDropdownOption(page, "agent-respond-to", "Anyone");
+    await page.getByTestId("edit-agent-dialog-submit").click();
+
+    await expect(page.getByTestId("edit-agent-dialog")).not.toBeVisible();
+    await expect(
+      page.getByText(
+        "Agent saved, but the automatic restart preference was not updated. Reopen this agent and try again.",
+      ),
+    ).toBeVisible();
+
+    // The authoritative access write committed despite the independent
+    // preference failure, and reopening reflects the still-stored preference.
+    await page.getByTestId("user-profile-edit-agent").click();
+    await expect(page.locator("#agent-respond-to")).toHaveText("Anyone");
+    await page.getByRole("button", { name: "Advanced", exact: true }).click();
+    await expect(page.locator("#edit-agent-auto-restart")).toBeChecked();
+
+    const commands = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__ ?? [],
+    );
+    expect(
+      managedAgentWriteCommands(commands, commandLogStart).map(
+        (entry) => entry.command,
+      ),
+    ).toEqual(["update_managed_agent", "set_managed_agent_auto_restart"]);
+  });
+
+  test("updates automatic restart through the cache-owning mutation after the primary save", async ({
+    page,
+  }) => {
+    await installMockBridge(page, {
+      managedAgents: [
+        {
+          pubkey: AGENT_PUBKEY,
+          name: AGENT_NAME,
+          status: "stopped",
+          channelNames: ["agents"],
+          autoRestartOnConfigChange: true,
+        },
+      ],
+    });
+
+    await openEditDialog(page);
+    const commandLogStart = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__?.length ?? 0,
+    );
+    await page.getByRole("button", { name: "Advanced", exact: true }).click();
+    await page.locator("#edit-agent-auto-restart").uncheck();
+    await page.getByTestId("edit-agent-dialog-submit").click();
+    await expect(page.getByTestId("edit-agent-dialog")).not.toBeVisible();
+
+    const commands = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__ ?? [],
+    );
+    expect(
+      managedAgentWriteCommands(commands, commandLogStart).map(
+        (entry) => entry.command,
+      ),
+    ).toEqual(["update_managed_agent", "set_managed_agent_auto_restart"]);
+    expect(
+      managedAgentWriteCommands(commands, commandLogStart).find(
+        (entry) => entry.command === "set_managed_agent_auto_restart",
+      )?.payload,
+    ).toEqual({ pubkey: AGENT_PUBKEY, autoRestartOnConfigChange: false });
+
+    await page.getByTestId("user-profile-edit-agent").click();
+    await page.getByRole("button", { name: "Advanced", exact: true }).click();
+    await expect(page.locator("#edit-agent-auto-restart")).not.toBeChecked();
+  });
+
+  test("does not write automatic restart when the primary agent save fails", async ({
+    page,
+  }) => {
+    await installMockBridge(page, {
+      updateManagedAgentErrors: ["Mock agent save failed."],
+      managedAgents: [
+        {
+          pubkey: AGENT_PUBKEY,
+          name: AGENT_NAME,
+          status: "running",
+          channelNames: ["agents"],
+          autoRestartOnConfigChange: true,
+        },
+      ],
+    });
+
+    await openEditDialog(page);
+    const commandLogStart = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__?.length ?? 0,
+    );
+    await page.getByRole("button", { name: "Advanced", exact: true }).click();
+    await page.locator("#edit-agent-auto-restart").uncheck();
+    await page.getByTestId("edit-agent-dialog-submit").click();
+
+    await expect(page.getByText("Mock agent save failed.")).toBeVisible();
+    await expect(page.getByTestId("edit-agent-dialog")).toBeVisible();
+    const commands = await page.evaluate(
+      () => window.__BUZZ_E2E_COMMAND_LOG__ ?? [],
+    );
+    expect(
+      managedAgentWriteCommands(commands, commandLogStart).map(
+        (entry) => entry.command,
+      ),
+    ).toEqual(["update_managed_agent"]);
   });
 });
